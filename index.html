@@ -176,6 +176,7 @@ let currentUser = '';
 let allUsers = {};
 let currentDay = 'Friday';
 let searchQuery = '';
+let groupHidden = [];
 
 async function loadSchedule() {
   const res = await fetch('schedule.json');
@@ -375,36 +376,51 @@ function timesOverlap(a, b) {
 
 function renderGroup() {
   const container = document.getElementById('group-tab');
-  const users = Object.keys(allUsers).filter(u => allUsers[u].length > 0);
+  const allWithPicks = Object.keys(allUsers).filter(u => allUsers[u].length > 0);
 
-  if (users.length === 0) {
+  if (allWithPicks.length === 0) {
     container.innerHTML = '<div class="empty"><div class="icon">👥</div><p>No one has picked any DJs yet.</p></div>';
     return;
   }
 
-  let html = '<div class="manage-users"><h3>Users with picks</h3><div class="user-chips">';
-  users.forEach(u => {
-    html += '<span class="user-chip">' + u + ' <button class="remove" onclick="removeUser(\'' + u.replace(/'/g, "\\'") + '\')">&times;</button></span>';
-  });
-  html += '</div></div>';
+  const shown = allWithPicks.filter(u => !groupHidden.includes(u));
+  const hidden = allWithPicks.filter(u => groupHidden.includes(u));
 
-  const collisions = findCollisions(users);
-  if (collisions.length > 0) {
-    html += '<div class="collision-banner">';
-    html += '<h3>⚡ Schedule Collisions</h3>';
-    collisions.forEach(c => {
-      html += '<div class="collision-item">';
-      html += '<div><span class="dj">' + c.sets.map(s => s.dj).join(' vs ') + '</span>';
-      html += '<div class="clash-info">';
-      c.sets.forEach(s => {
-        html += s.dj + ' (' + s.stage + ' ' + s.start + '-' + s.end + ') — wanted by ' + c.people.join(', ');
-      });
-      html += '</div></div></div>';
+  let html = '<div class="manage-users"><h3>Users with picks</h3><div class="user-chips">';
+  shown.forEach(u => {
+    html += '<span class="user-chip">' + u + ' <button class="remove" onclick="hideFromGroup(\'' + u.replace(/'/g, "\\'") + '\')">&times;</button></span>';
+  });
+  html += '</div>';
+  if (hidden.length > 0) {
+    html += '<h3 style="margin-top:10px">Hidden</h3><div class="user-chips">';
+    hidden.forEach(u => {
+      html += '<span class="user-chip" style="opacity:.5;text-decoration:line-through">' + u + ' <button class="remove" style="color:var(--success)" onclick="showInGroup(\'' + u.replace(/'/g, "\\'") + '\')">+</button></span>';
     });
     html += '</div>';
   }
+  html += '</div>';
 
-  users.forEach(user => {
+  if (shown.length < 2) {
+    html += '<div class="empty"><p>Need at least 2 visible users to show collisions.</p></div>';
+  } else {
+    const collisions = findCollisions(shown);
+    if (collisions.length > 0) {
+      html += '<div class="collision-banner">';
+      html += '<h3>⚡ Schedule Collisions</h3>';
+      collisions.forEach(c => {
+        html += '<div class="collision-item">';
+        html += '<div><span class="dj">' + c.sets.map(s => s.dj).join(' vs ') + '</span>';
+        html += '<div class="clash-info">';
+        c.sets.forEach(s => {
+          html += s.dj + ' (' + s.stage + ' ' + s.start + '-' + s.end + ') — wanted by ' + c.people.join(', ');
+        });
+        html += '</div></div></div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  shown.forEach(user => {
     const picks = allUsers[user];
     let items = picks.map(i => schedule[i]).filter(Boolean);
     items.sort((a, b) => {
@@ -426,6 +442,16 @@ function renderGroup() {
   });
 
   container.innerHTML = html;
+}
+
+function hideFromGroup(name) {
+  if (!groupHidden.includes(name)) groupHidden.push(name);
+  renderGroup();
+}
+
+function showInGroup(name) {
+  groupHidden = groupHidden.filter(u => u !== name);
+  renderGroup();
 }
 
 function findCollisions(users) {
