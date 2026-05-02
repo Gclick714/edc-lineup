@@ -260,6 +260,7 @@ async function syncFromCloud() {
     const res = await fetch('/api/data');
     if (!res.ok) return;
     const data = await res.json();
+    console.log('DEBUG: Data received from cloud:', JSON.stringify(data.users, null, 2));
 
     if (data.schedule && data.schedule.length > 0) {
       schedule = data.schedule;
@@ -273,6 +274,7 @@ async function syncFromCloud() {
         const userPicks = data.users[user];
         newUsers[user] = Array.isArray(userPicks) ? [...userPicks] : [];
       }
+      console.log('DEBUG: allUsers created from cloud:', JSON.stringify(newUsers, null, 2));
       allUsers = newUsers;
       localStorage.setItem('edc-users', JSON.stringify(allUsers));
     }
@@ -281,11 +283,15 @@ async function syncFromCloud() {
 
 function loadUsers() {
   const data = localStorage.getItem('edc-users');
-  if (data) allUsers = JSON.parse(data);
+  if (data) {
+    allUsers = JSON.parse(data);
+    console.log('DEBUG: allUsers loaded from localStorage:', JSON.stringify(allUsers, null, 2));
+  }
 }
 
 function saveUsers() {
   localStorage.setItem('edc-users', JSON.stringify(allUsers));
+  console.log('DEBUG: allUsers saved to localStorage:', JSON.stringify(allUsers, null, 2));
   scheduleSync();
 }
 
@@ -306,6 +312,7 @@ function login() {
 }
 
 function loginAs(name) {
+  console.log('DEBUG: Logging in as', name, '| Current allUsers:', JSON.stringify(allUsers, null, 2));
   currentUser = name;
   // Ensure user has a fresh array (defensive copy if it exists)
   if (!allUsers[name]) {
@@ -314,6 +321,7 @@ function loginAs(name) {
     console.error('User data corrupted for', name, allUsers[name]);
     allUsers[name] = [];
   }
+  console.log('DEBUG: After loginAs, currentUser =', currentUser, '| allUsers[' + name + '] =', allUsers[name]);
   saveUsers();
   document.getElementById('current-user').textContent = name;
   document.getElementById('login-screen').classList.remove('active');
