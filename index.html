@@ -501,7 +501,12 @@ function renderEdit() {
   container.innerHTML = html;
 }
 
-function onEditSearch(v) { editSearch = v; editingIdx = null; renderEdit(); }
+function onEditSearch(v) { editSearch = v; editingIdx = null; renderEdit(); restoreSearchFocus(); }
+
+function restoreSearchFocus() {
+  const input = document.querySelector('#edit-tab .search-bar');
+  if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+}
 
 function startEdit(idx) { editingIdx = idx; renderEdit(); }
 
@@ -519,6 +524,7 @@ function saveEdit() {
   saveSchedule();
   showToast('Saved!');
   editingIdx = null;
+  editSearch = dj;
   renderEdit();
 }
 
@@ -541,8 +547,6 @@ function addNewEntry() {
   editingIdx = schedule.length - 1;
   renderEdit();
 }
-
-function onEditSearch(v) { editSearch = v; editingIdx = null; renderEdit(); }
 
 function removeUser(name) {
   delete allUsers[name];
