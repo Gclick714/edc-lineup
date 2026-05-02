@@ -209,6 +209,82 @@ function saveSchedule() {
   scheduleSync();
 }
 
+function saveUsers() {
+  localStorage.setItem('edc-users', JSON.stringify(allUsers));
+  scheduleSync();
+}
+
+function scheduleSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncToCloud, 2000);
+}
+
+function setSyncStatus(msg) {
+  const el = document.getElementById('sync-status');
+  if (el) el.textContent = msg;
+}
+
+async function syncToCloud() {
+  setSyncStatus('syncing...');
+  try {
+    const payload = { users: {}, schedule: schedule };
+    for (const u in allUsers) {
+      payload.users[u] = allUsers[u].slice();
+    }
+    const res = await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if (json.ok) {
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus(''), 3000);
+    } else {
+      setSyncStatus('sync failed: ' + (json.error || 'unknown'));
+    }
+  } catch (e) {
+    setSyncStatus('sync error: ' + e.message);
+  }
+}
+
+async function manualSync() {
+  setSyncStatus('uploading...');
+  await syncToCloud();
+}
+
+async function syncFromCloud() {
+  try {
+    const res = await fetch('/api/data');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    if (data.schedule && data.schedule.length > 0) {
+      schedule = data.schedule;
+      localStorage.setItem('edc-schedule', JSON.stringify(schedule));
+    }
+
+    if (data.users && Object.keys(data.users).length > 0) {
+      const cloudU = data.users;
+      const localRaw = localStorage.getItem('edc-users');
+      const localU = localRaw ? JSON.parse(localRaw) : {};
+
+      for (const u in cloudU) {
+        if (!localU[u]) {
+          localU[u] = cloudU[u].slice();
+        } else {
+          const merged = new Set([...localU[u], ...cloudU[u]]);
+          localU[u] = Array.from(merged);
+        }
+      }
+      allUsers = localU;
+      localStorage.setItem('edc-users', JSON.stringify(allUsers));
+    }
+
+    syncToCloud();
+  } catch (e) {}
+}
+
 function loadUsers() {
   const data = localStorage.getItem('edc-users');
   if (data) allUsers = JSON.parse(data);
