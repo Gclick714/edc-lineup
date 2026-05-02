@@ -88,6 +88,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   .set-card .heart-btn{font-size:1.2rem;width:32px}
   .logo h1{font-size:1.5rem}
 }
+.edit-form{background:var(--card);border-radius:12px;padding:20px;margin-bottom:12px}
+.edit-form label{display:block;font-size:.8rem;color:var(--text2);margin-bottom:4px;margin-top:12px}
+.edit-form label:first-child{margin-top:0}
+.edit-form input,.edit-form select{width:100%;padding:10px 14px;border:1px solid var(--stage-border);border-radius:8px;background:var(--card2);color:var(--text);font-size:.9rem;outline:none}
+.edit-form input:focus,.edit-form select:focus{border-color:var(--accent)}
+.edit-form .btn-row{display:flex;gap:8px;margin-top:16px}
+.edit-form .btn-save{flex:1;padding:12px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-weight:700;font-size:.9rem;cursor:pointer}
+.edit-form .btn-delete{padding:12px 18px;border:1px solid var(--danger);border-radius:8px;background:transparent;color:var(--danger);font-weight:600;font-size:.9rem;cursor:pointer}
+.edit-form .btn-cancel{padding:12px 18px;border:1px solid var(--stage-border);border-radius:8px;background:transparent;color:var(--text2);font-size:.9rem;cursor:pointer}
+.edit-result{background:var(--card);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;border-left:3px solid var(--stage-border);cursor:pointer;transition:all .15s;margin-bottom:6px}
+.edit-result:hover{background:var(--card2);border-left-color:var(--accent)}
+.edit-result .dj-name{font-weight:600;font-size:.95rem}
+.edit-result .meta{font-size:.75rem;color:var(--text2);margin-top:2px}
+.edit-add-btn{width:100%;padding:14px;border:2px dashed var(--stage-border);border-radius:10px;background:transparent;color:var(--text2);font-size:.9rem;cursor:pointer;transition:all .15s}
+.edit-add-btn:hover{border-color:var(--accent);color:var(--accent)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 24px;background:var(--success);color:#000;border-radius:8px;font-weight:600;font-size:.9rem;z-index:100;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -112,12 +129,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <button class="tab active" onclick="showTab('schedule')">Schedule</button>
       <button class="tab" onclick="showTab('my-picks')">My Picks</button>
       <button class="tab" onclick="showTab('group')">Group</button>
+      <button class="tab" onclick="showTab('edit')">Edit</button>
     </div>
     <div id="schedule-tab"></div>
     <div id="my-picks-tab" style="display:none"></div>
     <div id="group-tab" style="display:none"></div>
+    <div id="edit-tab" style="display:none"></div>
   </div>
 </div>
+<div class="toast" id="toast"></div>
 
 <script>
 const STAGE_COLORS = {
@@ -148,7 +168,18 @@ let searchQuery = '';
 
 async function loadSchedule() {
   const res = await fetch('schedule.json');
-  schedule = await res.json();
+  const base = await res.json();
+  const saved = localStorage.getItem('edc-schedule');
+  if (saved) {
+    schedule = JSON.parse(saved);
+  } else {
+    schedule = base;
+  }
+  localStorage.setItem('edc-schedule-base', JSON.stringify(base));
+}
+
+function saveSchedule() {
+  localStorage.setItem('edc-schedule', JSON.stringify(schedule));
 }
 
 function loadUsers() {
@@ -186,9 +217,11 @@ function showTab(tab) {
   document.getElementById('schedule-tab').style.display = tab === 'schedule' ? '' : 'none';
   document.getElementById('my-picks-tab').style.display = tab === 'my-picks' ? '' : 'none';
   document.getElementById('group-tab').style.display = tab === 'group' ? '' : 'none';
+  document.getElementById('edit-tab').style.display = tab === 'edit' ? '' : 'none';
   if (tab === 'schedule') renderSchedule();
   if (tab === 'my-picks') renderMyPicks();
   if (tab === 'group') renderGroup();
+  if (tab === 'edit') renderEdit();
 }
 
 function parseTime(t, day) {
@@ -404,6 +437,112 @@ function findCollisions(users) {
   }
   return collisions;
 }
+
+let editSearch = '';
+let editingIdx = null;
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function renderEdit() {
+  const container = document.getElementById('edit-tab');
+  let html = '<input class="search-bar" type="text" placeholder="Search DJ to edit..." oninput="onEditSearch(this.value)" value="' + editSearch.replace(/"/g, '&quot;') + '">';
+
+  if (editingIdx !== null) {
+    const s = schedule[editingIdx];
+    html += '<div class="edit-form">';
+    html += '<label>DJ Name</label>';
+    html += '<input type="text" id="edit-dj" value="' + s.dj.replace(/"/g, '&quot;') + '">';
+    html += '<label>Stage</label>';
+    html += '<input type="text" id="edit-stage" value="' + s.stage.replace(/"/g, '&quot;') + '">';
+    html += '<label>Day</label>';
+    html += '<select id="edit-day">';
+    ['Friday','Saturday','Sunday'].forEach(d => {
+      html += '<option' + (d === s.day ? ' selected' : '') + '>' + d + '</option>';
+    });
+    html += '</select>';
+    html += '<div style="display:flex;gap:8px">';
+    html += '<div style="flex:1"><label>Start Time</label><input type="text" id="edit-start" value="' + s.start + '" placeholder="e.g. 9:00 PM"></div>';
+    html += '<div style="flex:1"><label>End Time</label><input type="text" id="edit-end" value="' + s.end + '" placeholder="e.g. 11:30 PM"></div>';
+    html += '</div>';
+    html += '<div class="btn-row">';
+    html += '<button class="btn-save" onclick="saveEdit()">Save</button>';
+    html += '<button class="btn-delete" onclick="deleteEntry()">Delete</button>';
+    html += '<button class="btn-cancel" onclick="cancelEdit()">Cancel</button>';
+    html += '</div></div>';
+  }
+
+  if (editSearch.length > 0) {
+    const q = editSearch.toLowerCase();
+    const results = schedule.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
+    results.sort((a, b) => {
+      if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
+      return sortTime(a.start) - sortTime(b.start);
+    });
+    results.forEach(s => {
+      const idx = schedule.indexOf(s);
+      const color = getStageColor(s.stage);
+      html += '<div class="edit-result" onclick="startEdit(' + idx + ')">';
+      html += '<div><div class="dj-name">' + s.dj + '</div>';
+      html += '<div class="meta">' + s.day + ' &middot; ' + s.start + ' - ' + s.end + ' &middot; <span style="color:' + color + '">' + s.stage + '</span></div>';
+      html += '</div></div>';
+    });
+    if (results.length === 0) {
+      html += '<div class="empty"><p>No matches found.</p></div>';
+    }
+  }
+
+  html += '<button class="edit-add-btn" onclick="addNewEntry()">+ Add New DJ Entry</button>';
+
+  container.innerHTML = html;
+}
+
+function onEditSearch(v) { editSearch = v; editingIdx = null; renderEdit(); }
+
+function startEdit(idx) { editingIdx = idx; renderEdit(); }
+
+function cancelEdit() { editingIdx = null; renderEdit(); }
+
+function saveEdit() {
+  if (editingIdx === null) return;
+  const dj = document.getElementById('edit-dj').value.trim();
+  const stage = document.getElementById('edit-stage').value.trim();
+  const day = document.getElementById('edit-day').value;
+  const start = document.getElementById('edit-start').value.trim();
+  const end = document.getElementById('edit-end').value.trim();
+  if (!dj || !stage || !start || !end) { showToast('All fields required'); return; }
+  schedule[editingIdx] = { dj, stage, day, start, end };
+  saveSchedule();
+  showToast('Saved!');
+  editingIdx = null;
+  renderEdit();
+}
+
+function deleteEntry() {
+  if (editingIdx === null) return;
+  schedule.splice(editingIdx, 1);
+  Object.keys(allUsers).forEach(u => {
+    allUsers[u] = allUsers[u].filter(i => i !== editingIdx).map(i => i > editingIdx ? i - 1 : i);
+  });
+  saveSchedule();
+  saveUsers();
+  showToast('Deleted');
+  editingIdx = null;
+  renderEdit();
+}
+
+function addNewEntry() {
+  schedule.push({ dj: 'New DJ', stage: 'Stage', day: 'Friday', start: '7:00 PM', end: '8:00 PM' });
+  saveSchedule();
+  editingIdx = schedule.length - 1;
+  renderEdit();
+}
+
+function onEditSearch(v) { editSearch = v; editingIdx = null; renderEdit(); }
 
 function removeUser(name) {
   delete allUsers[name];
