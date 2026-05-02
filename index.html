@@ -117,6 +117,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .admin-card .pick-count{font-size:.8rem;color:var(--text2)}
 .admin-card .btn-rm{padding:8px 16px;border:1px solid var(--danger);border-radius:8px;background:transparent;color:var(--danger);font-size:.8rem;font-weight:600;cursor:pointer}
 .admin-card .btn-rm:hover{background:rgba(255,64,129,.1)}
+.conflict-row{background:rgba(255,64,129,.08)!important;border-radius:6px}
+.conflict-badge{color:var(--danger);font-size:.85rem;margin-right:2px}
+.conflict-detail{padding:8px 12px 8px 28px;border-bottom:1px solid var(--stage-border)}
+.conflict-detail-item{padding:6px 0;font-size:.8rem}
+.conflict-detail-item+.conflict-detail-item{border-top:1px solid var(--stage-border)}
 </style>
 </head>
 <body>
@@ -424,46 +429,61 @@ function renderGroup() {
   }
   html += '</div>';
 
-  if (shown.length < 2) {
-    html += '<div class="empty"><p>Need at least 2 visible users to show collisions.</p></div>';
-  } else {
-    const collisions = findCollisions(shown);
-    if (collisions.length > 0) {
-      html += '<div class="collision-banner">';
-      html += '<h3>⚡ Schedule Collisions</h3>';
-      collisions.forEach(c => {
-        html += '<div class="collision-item">';
-        html += '<div><span class="dj">' + c.sets.map(s => s.dj).join(' vs ') + '</span>';
-        const oMins = overlapMinutes(c.sets[0], c.sets[1]);
-        html += '<div class="clash-info">';
-        c.sets.forEach((s, si) => {
-          if (si > 0) html += '<br>';
-          html += s.dj + ' (' + s.stage + ' ' + s.start + '-' + s.end + ')';
-        });
-        html += '<br>Overlaps ' + minsToTimeStr(oMins) + ' — wanted by ' + c.people.join(', ');
-        html += '</div></div></div>';
-      });
-      html += '</div>';
-    }
-  }
+  let collisions = [];
+  if (shown.length >= 2) collisions = findCollisions(shown);
 
+  const conflictMap = {};
+  collisions.forEach(c => {
+    const sIdx0 = schedule.indexOf(c.sets[0]);
+    const sIdx1 = schedule.indexOf(c.sets[1]);
+    if (!conflictMap[sIdx0]) conflictMap[sIdx0] = [];
+    if (!conflictMap[sIdx1]) conflictMap[sIdx1] = [];
+    conflictMap[sIdx0].push(c);
+    conflictMap[sIdx1].push(c);
+  });
+
+  let conflictId = 0;
   shown.forEach(user => {
     const picks = allUsers[user];
-    let items = picks.map(i => schedule[i]).filter(Boolean);
+    let items = picks.map(i => ({ idx: i, s: schedule[i] })).filter(x => x.s);
     items.sort((a, b) => {
-      if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
-      return sortTime(a.start) - sortTime(b.start);
+      if (a.s.day !== b.s.day) return ['Friday','Saturday','Sunday'].indexOf(a.s.day) - ['Friday','Saturday','Sunday'].indexOf(b.s.day);
+      return sortTime(a.s.start) - sortTime(b.s.start);
     });
     html += '<div class="person-card">';
     html += '<h3>' + user + ' (' + items.length + ' picks)</h3>';
     let lastDay = '';
-    items.forEach(s => {
+    items.forEach(({ idx, s }) => {
       if (s.day !== lastDay) {
         html += '<div style="padding:6px 0 2px;font-size:.75rem;color:var(--accent);font-weight:700">' + s.day + '</div>';
         lastDay = s.day;
       }
       const color = getStageColor(s.stage);
-      html += '<div class="set-item"><span class="time">' + s.start + '</span><span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span><span style="color:var(--text2);font-size:.7rem;margin-left:auto">' + s.stage + '</span></div>';
+      const conflicts = conflictMap[idx] || [];
+      const hasConflict = conflicts.length > 0;
+      const cid = 'conflict-' + conflictId++;
+      html += '<div class="set-item' + (hasConflict ? ' conflict-row' : '') + '" style="cursor:' + (hasConflict ? 'pointer' : 'default') + '"' + (hasConflict ? ' onclick="toggleConflict(\'' + cid + '\')"' : '') + '>';
+      if (hasConflict) html += '<span class="conflict-badge">⚡</span>';
+      html += '<span class="time">' + s.start + '</span>';
+      html += '<span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span>';
+      html += '<span style="color:var(--text2);font-size:.7rem;margin-left:auto">' + s.stage + '</span>';
+      html += '</div>';
+      if (hasConflict) {
+        html += '<div id="' + cid + '" class="conflict-detail" style="display:none">';
+        conflicts.forEach(c => {
+          const other = c.sets[0] === s ? c.sets[1] : c.sets[0];
+          const oMins = overlapMinutes(c.sets[0], c.sets[1]);
+          const otherIdx = schedule.indexOf(other);
+          const otherUser = c.people.find(p => p !== user) || user;
+          html += '<div class="conflict-detail-item">';
+          html += '<span style="color:var(--danger)">⚡</span> ';
+          html += 'Conflicts with <b>' + other.dj + '</b> (' + other.stage + ')';
+          html += '<br><span style="color:var(--text2)">' + other.start + ' - ' + other.end + ' &middot; wanted by ' + otherUser + '</span>';
+          html += '<br><span style="color:var(--danger)">Overlaps ' + minsToTimeStr(oMins) + '</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
     });
     html += '</div>';
   });
@@ -479,6 +499,11 @@ function hideFromGroup(name) {
 function showInGroup(name) {
   groupHidden = groupHidden.filter(u => u !== name);
   renderGroup();
+}
+
+function toggleConflict(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 function findCollisions(users) {
