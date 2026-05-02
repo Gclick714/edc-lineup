@@ -267,7 +267,13 @@ async function syncFromCloud() {
     }
 
     if (data.users && Object.keys(data.users).length > 0) {
-      allUsers = data.users;
+      // Create fresh object with defensive copies to prevent data mixing
+      const newUsers = {};
+      for (const user in data.users) {
+        const userPicks = data.users[user];
+        newUsers[user] = Array.isArray(userPicks) ? [...userPicks] : [];
+      }
+      allUsers = newUsers;
       localStorage.setItem('edc-users', JSON.stringify(allUsers));
     }
   } catch (e) {}
@@ -293,26 +299,6 @@ function setSyncStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-async function syncToCloud() {
-  setSyncStatus('syncing...');
-  try {
-    const res = await fetch('/api/data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ users: allUsers, schedule: schedule })
-    });
-    const json = await res.json();
-    if (json.ok) {
-      setSyncStatus('synced');
-      setTimeout(() => setSyncStatus(''), 3000);
-    } else {
-      setSyncStatus('sync failed: ' + (json.error || 'unknown'));
-    }
-  } catch (e) {
-    setSyncStatus('sync error: ' + e.message);
-  }
-}
-
 function login() {
   const name = document.getElementById('name-input').value.trim();
   if (!name) return;
@@ -321,7 +307,13 @@ function login() {
 
 function loginAs(name) {
   currentUser = name;
-  if (!allUsers[name]) allUsers[name] = [];
+  // Ensure user has a fresh array (defensive copy if it exists)
+  if (!allUsers[name]) {
+    allUsers[name] = [];
+  } else if (!Array.isArray(allUsers[name])) {
+    console.error('User data corrupted for', name, allUsers[name]);
+    allUsers[name] = [];
+  }
   saveUsers();
   document.getElementById('current-user').textContent = name;
   document.getElementById('login-screen').classList.remove('active');
@@ -382,11 +374,14 @@ function getStageColor(stage) {
 }
 
 function toggleHeart(idx) {
-  const picks = allUsers[currentUser] || [];
+  if (!currentUser || !allUsers[currentUser]) {
+    console.error('Invalid user state:', currentUser, allUsers);
+    return;
+  }
+  const picks = allUsers[currentUser];
   const i = picks.indexOf(idx);
   if (i >= 0) picks.splice(i, 1);
   else picks.push(idx);
-  allUsers[currentUser] = picks;
   saveUsers();
   renderSchedule();
 }
