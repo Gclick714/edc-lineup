@@ -143,6 +143,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
   <div id="main-screen" class="screen">
     <div class="user-bar">
       <span>🎵 <span class="name" id="current-user"></span></span>
+      <span id="sync-status" style="font-size:.7rem;color:var(--text2)"></span>
+      <button onclick="manualSync()">Sync</button>
       <button onclick="switchUser()">Switch User</button>
     </div>
     <div class="tabs">
@@ -222,14 +224,34 @@ function scheduleSync() {
   syncTimer = setTimeout(syncToCloud, 2000);
 }
 
+function setSyncStatus(msg) {
+  const el = document.getElementById('sync-status');
+  if (el) el.textContent = msg;
+}
+
 async function syncToCloud() {
+  setSyncStatus('syncing...');
   try {
-    await fetch('/api/data', {
+    const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ users: allUsers, schedule: schedule })
     });
-  } catch (e) {}
+    const json = await res.json();
+    if (json.ok) {
+      setSyncStatus('synced');
+      setTimeout(() => setSyncStatus(''), 3000);
+    } else {
+      setSyncStatus('sync failed: ' + (json.error || 'unknown'));
+    }
+  } catch (e) {
+    setSyncStatus('sync error: ' + e.message);
+  }
+}
+
+async function manualSync() {
+  setSyncStatus('uploading...');
+  await syncToCloud();
 }
 
 async function syncFromCloud() {
