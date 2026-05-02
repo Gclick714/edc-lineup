@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EDC Las Vegas - Lineup Planner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0a0f;--card:#13131f;--card2:#1a1a2e;--accent:#e040fb;--accent2:#7c4dff;
+  --text:#e8e8f0;--text2:#8888aa;--danger:#ff4081;--success:#69f0ae;
+  --stage-border:#2a2a3e;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.app{max-width:800px;margin:0 auto;padding:16px}
+
+.screen{display:none}
+.screen.active{display:block}
+
+.logo{text-align:center;padding:32px 0}
+.logo h1{font-size:2rem;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:800}
+.logo p{color:var(--text2);margin-top:8px;font-size:.9rem}
+
+.name-form{text-align:center;margin-top:40px}
+.name-form input{width:100%;max-width:320px;padding:14px 20px;border:2px solid var(--stage-border);border-radius:12px;background:var(--card);color:var(--text);font-size:1.1rem;outline:none;text-align:center}
+.name-form input:focus{border-color:var(--accent)}
+.name-form button{display:block;margin:20px auto 0;padding:14px 48px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:1.1rem;font-weight:700;cursor:pointer;transition:transform .1s,opacity .1s}
+.name-form button:hover{transform:scale(1.03)}
+.name-form button:active{transform:scale(.97)}
+
+.tabs{display:flex;gap:4px;margin:16px 0;background:var(--card);border-radius:12px;padding:4px;position:sticky;top:8px;z-index:10}
+.tab{flex:1;padding:10px 8px;border:none;border-radius:10px;background:transparent;color:var(--text2);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s}
+.tab.active{background:var(--card2);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,.3)}
+
+.day-tabs{display:flex;gap:4px;margin:12px 0}
+.day-tab{flex:1;padding:8px;border:1px solid var(--stage-border);border-radius:8px;background:transparent;color:var(--text2);font-size:.8rem;font-weight:600;cursor:pointer;text-align:center}
+.day-tab.active{border-color:var(--accent);color:var(--accent);background:rgba(224,64,251,.08)}
+
+.user-bar{display:flex;align-items:center;justify-content:space-between;padding:8px 0;margin-bottom:8px}
+.user-bar span{color:var(--text2);font-size:.85rem}
+.user-bar .name{color:var(--accent);font-weight:600}
+.user-bar button{padding:6px 14px;border:1px solid var(--stage-border);border-radius:8px;background:transparent;color:var(--text2);font-size:.8rem;cursor:pointer}
+
+.schedule{display:flex;flex-direction:column;gap:8px}
+
+.time-header{padding:12px 16px 4px;font-size:.8rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;position:sticky;top:60px;background:var(--bg);z-index:5;padding-top:16px}
+
+.set-card{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border-radius:10px;border-left:3px solid var(--stage-border);transition:all .15s}
+.set-card.hearted{border-left-color:var(--danger);background:rgba(255,64,129,.06)}
+.set-card .heart-btn{background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text2);transition:transform .15s;flex-shrink:0;width:36px;text-align:center}
+.set-card .heart-btn.active{color:var(--danger)}
+.set-card .heart-btn:hover{transform:scale(1.15)}
+.set-card .info{flex:1;min-width:0}
+.set-card .dj-name{font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.set-card .meta{display:flex;gap:8px;margin-top:4px;font-size:.75rem;color:var(--text2);flex-wrap:wrap}
+.set-card .stage-tag{background:var(--card2);padding:2px 8px;border-radius:4px}
+
+.group-view{padding:8px 0}
+.person-card{background:var(--card);border-radius:10px;padding:16px;margin-bottom:12px}
+.person-card h3{font-size:1rem;margin-bottom:10px;color:var(--accent)}
+.person-card .set-item{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.85rem;border-bottom:1px solid var(--stage-border)}
+.person-card .set-item:last-child{border:none}
+.person-card .set-item .time{color:var(--text2);min-width:90px;font-size:.75rem}
+
+.collision-banner{background:rgba(255,64,129,.1);border:1px solid rgba(255,64,129,.3);border-radius:10px;padding:16px;margin-bottom:16px}
+.collision-banner h3{color:var(--danger);font-size:1rem;margin-bottom:8px}
+.collision-item{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,64,129,.15);font-size:.85rem}
+.collision-item:last-child{border:none}
+.collision-item .dj{font-weight:600}
+.collision-item .clash-info{color:var(--text2);font-size:.75rem}
+.collision-item .people{color:var(--danger);font-weight:600;font-size:.75rem}
+
+.search-bar{width:100%;padding:10px 16px;border:1px solid var(--stage-border);border-radius:10px;background:var(--card);color:var(--text);font-size:.9rem;margin-bottom:12px;outline:none}
+.search-bar:focus{border-color:var(--accent)}
+.search-bar::placeholder{color:var(--text2)}
+
+.empty{text-align:center;padding:40px 20px;color:var(--text2)}
+.empty .icon{font-size:3rem;margin-bottom:12px}
+
+.manage-users{margin-bottom:16px}
+.manage-users h3{font-size:.9rem;color:var(--text2);margin-bottom:8px}
+.user-chips{display:flex;flex-wrap:wrap;gap:6px}
+.user-chip{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--card2);border-radius:8px;font-size:.8rem}
+.user-chip .remove{background:none;border:none;color:var(--danger);cursor:pointer;font-size:.9rem;padding:0}
+
+@media(max-width:500px){
+  .set-card{padding:10px 12px;gap:8px}
+  .set-card .heart-btn{font-size:1.2rem;width:32px}
+  .logo h1{font-size:1.5rem}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="login-screen" class="screen active">
+    <div class="logo">
+      <h1>EDC Las Vegas</h1>
+      <p>Lineup Planner & Collision Detector</p>
+    </div>
+    <div class="name-form">
+      <input type="text" id="name-input" placeholder="Enter your name" maxlength="30" autofocus>
+      <button onclick="login()">Enter</button>
+    </div>
+  </div>
+
+  <div id="main-screen" class="screen">
+    <div class="user-bar">
+      <span>🎵 <span class="name" id="current-user"></span></span>
+      <button onclick="switchUser()">Switch User</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" onclick="showTab('schedule')">Schedule</button>
+      <button class="tab" onclick="showTab('my-picks')">My Picks</button>
+      <button class="tab" onclick="showTab('group')">Group</button>
+    </div>
+    <div id="schedule-tab"></div>
+    <div id="my-picks-tab" style="display:none"></div>
+    <div id="group-tab" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+const STAGE_COLORS = {
+  'kinetic field': '#e040fb',
+  'cosmic meadow': '#7c4dff',
+  'circuit grounds': '#448aff',
+  'basspod': '#ff4081',
+  'neon garden': '#69f0ae',
+  'quantum valley': '#40c4ff',
+  'stereo bloom': '#ffab40',
+  'wasteland': '#ff6e40',
+  'bionic jungle': '#b2ff59',
+  'casa bacardí': '#ffd740',
+  'forest house': '#64ffda',
+  'yeedc!': '#ea80fc',
+  'electrolit hydration house': '#80d8ff',
+  'insomniac fridays': '#ff80ab',
+  'takis rave hangar': '#ff9100',
+  'beatbox art car': '#ff5252',
+  'picnic playtime art car': '#ffd180',
+};
+
+let schedule = [];
+let currentUser = '';
+let allUsers = {};
+let currentDay = 'Friday';
+let searchQuery = '';
+
+async function loadSchedule() {
+  const res = await fetch('schedule.json');
+  schedule = await res.json();
+}
+
+function loadUsers() {
+  const data = localStorage.getItem('edc-users');
+  if (data) allUsers = JSON.parse(data);
+}
+
+function saveUsers() {
+  localStorage.setItem('edc-users', JSON.stringify(allUsers));
+}
+
+function login() {
+  const name = document.getElementById('name-input').value.trim();
+  if (!name) return;
+  currentUser = name;
+  if (!allUsers[name]) allUsers[name] = [];
+  saveUsers();
+  document.getElementById('current-user').textContent = name;
+  document.getElementById('login-screen').classList.remove('active');
+  document.getElementById('main-screen').classList.add('active');
+  renderSchedule();
+}
+
+function switchUser() {
+  currentUser = '';
+  document.getElementById('main-screen').classList.remove('active');
+  document.getElementById('login-screen').classList.add('active');
+  document.getElementById('name-input').value = '';
+  document.getElementById('name-input').focus();
+}
+
+function showTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('schedule-tab').style.display = tab === 'schedule' ? '' : 'none';
+  document.getElementById('my-picks-tab').style.display = tab === 'my-picks' ? '' : 'none';
+  document.getElementById('group-tab').style.display = tab === 'group' ? '' : 'none';
+  if (tab === 'schedule') renderSchedule();
+  if (tab === 'my-picks') renderMyPicks();
+  if (tab === 'group') renderGroup();
+}
+
+function parseTime(t, day) {
+  const [time, period] = t.split(' ');
+  let [h, m] = time.split(':').map(Number);
+  if (period === 'PM' && h !== 12) h += 12;
+  if (period === 'AM' && h === 12) h = 0;
+  return h * 60 + m;
+}
+
+function getStageColor(stage) {
+  const lower = stage.toLowerCase();
+  for (const [key, color] of Object.entries(STAGE_COLORS)) {
+    if (lower.includes(key.split(' ')[0])) return color;
+  }
+  return '#888';
+}
+
+function toggleHeart(idx) {
+  const picks = allUsers[currentUser] || [];
+  const i = picks.indexOf(idx);
+  if (i >= 0) picks.splice(i, 1);
+  else picks.push(idx);
+  allUsers[currentUser] = picks;
+  saveUsers();
+  renderSchedule();
+}
+
+function renderSchedule() {
+  const container = document.getElementById('schedule-tab');
+  const picks = allUsers[currentUser] || [];
+
+  let html = '<input class="search-bar" type="text" placeholder="Search DJs or stages..." oninput="onSearch(this.value)" value="' + searchQuery + '">';
+  html += '<div class="day-tabs">';
+  ['Friday', 'Saturday', 'Sunday'].forEach(d => {
+    html += '<button class="day-tab' + (d === currentDay ? ' active' : '') + '" onclick="setDay(\'' + d + '\')">' + d + '</button>';
+  });
+  html += '</div>';
+
+  let filtered = schedule.filter(s => s.day === currentDay);
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
+  }
+  filtered.sort((a, b) => parseTime(a.start, a.day) - parseTime(b.start, b.day));
+
+  let lastTime = '';
+  filtered.forEach((s, i) => {
+    const idx = schedule.indexOf(s);
+    if (s.start !== lastTime) {
+      html += '<div class="time-header">' + s.start + '</div>';
+      lastTime = s.start;
+    }
+    const hearted = picks.includes(idx);
+    const color = getStageColor(s.stage);
+    html += '<div class="set-card' + (hearted ? ' hearted' : '') + '">';
+    html += '<button class="heart-btn' + (hearted ? ' active' : '') + '" onclick="toggleHeart(' + idx + ')">' + (hearted ? '❤️' : '🤍') + '</button>';
+    html += '<div class="info">';
+    html += '<div class="dj-name">' + s.dj + '</div>';
+    html += '<div class="meta">';
+    html += '<span class="stage-tag" style="border-left:2px solid ' + color + ';padding-left:6px">' + s.stage + '</span>';
+    html += '<span>' + s.start + ' - ' + s.end + '</span>';
+    html += '</div></div></div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function setDay(d) { currentDay = d; renderSchedule(); }
+function onSearch(v) { searchQuery = v; renderSchedule(); }
+
+function renderMyPicks() {
+  const container = document.getElementById('my-picks-tab');
+  const picks = allUsers[currentUser] || [];
+  if (picks.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="icon">🎵</div><p>No picks yet! Heart some DJs from the Schedule tab.</p></div>';
+    return;
+  }
+  let items = picks.map(i => schedule[i]).filter(Boolean);
+  items.sort((a, b) => {
+    if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
+    return parseTime(a.start, a.day) - parseTime(b.start, b.day);
+  });
+
+  let html = '<div class="schedule">';
+  let lastDay = '';
+  items.forEach((s, i) => {
+    if (s.day !== lastDay) {
+      html += '<div class="time-header">' + s.day + '</div>';
+      lastDay = s.day;
+    }
+    const idx = schedule.indexOf(s);
+    const color = getStageColor(s.stage);
+    html += '<div class="set-card hearted">';
+    html += '<button class="heart-btn active" onclick="toggleHeartMyPicks(' + idx + ')">❤️</button>';
+    html += '<div class="info">';
+    html += '<div class="dj-name">' + s.dj + '</div>';
+    html += '<div class="meta">';
+    html += '<span class="stage-tag" style="border-left:2px solid ' + color + ';padding-left:6px">' + s.stage + '</span>';
+    html += '<span>' + s.start + ' - ' + s.end + '</span>';
+    html += '</div></div></div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+function toggleHeartMyPicks(idx) {
+  toggleHeart(idx);
+  renderMyPicks();
+}
+
+function timesOverlap(a, b) {
+  const aStart = parseTime(a.start, a.day);
+  let aEnd = parseTime(a.end, a.day);
+  if (aEnd <= aStart) aEnd += 1440;
+  const bStart = parseTime(b.start, b.day);
+  let bEnd = parseTime(b.end, b.day);
+  if (bEnd <= bStart) bEnd += 1440;
+  return aStart < bEnd && bStart < aEnd;
+}
+
+function renderGroup() {
+  const container = document.getElementById('group-tab');
+  const users = Object.keys(allUsers).filter(u => allUsers[u].length > 0);
+
+  if (users.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="icon">👥</div><p>No one has picked any DJs yet.</p></div>';
+    return;
+  }
+
+  let html = '<div class="manage-users"><h3>Users with picks</h3><div class="user-chips">';
+  users.forEach(u => {
+    html += '<span class="user-chip">' + u + ' <button class="remove" onclick="removeUser(\'' + u.replace(/'/g, "\\'") + '\')">&times;</button></span>';
+  });
+  html += '</div></div>';
+
+  const collisions = findCollisions(users);
+  if (collisions.length > 0) {
+    html += '<div class="collision-banner">';
+    html += '<h3>⚡ Schedule Collisions</h3>';
+    collisions.forEach(c => {
+      html += '<div class="collision-item">';
+      html += '<div><span class="dj">' + c.sets.map(s => s.dj).join(' vs ') + '</span>';
+      html += '<div class="clash-info">';
+      c.sets.forEach(s => {
+        html += s.dj + ' (' + s.stage + ' ' + s.start + '-' + s.end + ') — wanted by ' + c.people.join(', ');
+      });
+      html += '</div></div></div>';
+    });
+    html += '</div>';
+  }
+
+  users.forEach(user => {
+    const picks = allUsers[user];
+    let items = picks.map(i => schedule[i]).filter(Boolean);
+    items.sort((a, b) => {
+      if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
+      return parseTime(a.start, a.day) - parseTime(b.start, b.day);
+    });
+    html += '<div class="person-card">';
+    html += '<h3>' + user + ' (' + items.length + ' picks)</h3>';
+    let lastDay = '';
+    items.forEach(s => {
+      if (s.day !== lastDay) {
+        html += '<div style="padding:6px 0 2px;font-size:.75rem;color:var(--accent);font-weight:700">' + s.day + '</div>';
+        lastDay = s.day;
+      }
+      const color = getStageColor(s.stage);
+      html += '<div class="set-item"><span class="time">' + s.start + '</span><span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span><span style="color:var(--text2);font-size:.7rem;margin-left:auto">' + s.stage + '</span></div>';
+    });
+    html += '</div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function findCollisions(users) {
+  const collisions = [];
+  const userSets = {};
+  users.forEach(u => {
+    userSets[u] = (allUsers[u] || []).map(i => schedule[i]).filter(Boolean);
+  });
+
+  for (let i = 0; i < users.length; i++) {
+    for (let j = i + 1; j < users.length; j++) {
+      const a = userSets[users[i]];
+      const b = userSets[users[j]];
+      a.forEach(sa => {
+        b.forEach(sb => {
+          if (sa.day === sb.day && timesOverlap(sa, sb) && sa !== sb) {
+            const existing = collisions.find(c =>
+              c.sets.some(s => s === sa) && c.sets.some(s => s === sb)
+            );
+            if (existing) {
+              if (!existing.people.includes(users[i])) existing.people.push(users[i]);
+              if (!existing.people.includes(users[j])) existing.people.push(users[j]);
+            } else {
+              collisions.push({
+                sets: [sa, sb],
+                people: [users[i], users[j]]
+              });
+            }
+          }
+        });
+      });
+    }
+  }
+  return collisions;
+}
+
+function removeUser(name) {
+  delete allUsers[name];
+  saveUsers();
+  renderGroup();
+}
+
+document.getElementById('name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') login();
+});
+
+(async function init() {
+  await loadSchedule();
+  loadUsers();
+})();
+</script>
+</body>
+</html>
