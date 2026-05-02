@@ -249,8 +249,10 @@ async function syncToCloud() {
 }
 
 async function manualSync() {
-  setSyncStatus('uploading...');
+  setSyncStatus('syncing...');
   await syncToCloud();
+  await syncFromCloud();
+  renderSchedule();
 }
 
 async function syncFromCloud() {
@@ -265,23 +267,9 @@ async function syncFromCloud() {
     }
 
     if (data.users && Object.keys(data.users).length > 0) {
-      const cloudU = data.users;
-      const localRaw = localStorage.getItem('edc-users');
-      const localU = localRaw ? JSON.parse(localRaw) : {};
-
-      for (const u in cloudU) {
-        if (!localU[u]) {
-          localU[u] = cloudU[u].slice();
-        } else {
-          const merged = new Set([...localU[u], ...cloudU[u]]);
-          localU[u] = Array.from(merged);
-        }
-      }
-      allUsers = localU;
+      allUsers = data.users;
       localStorage.setItem('edc-users', JSON.stringify(allUsers));
     }
-
-    syncToCloud();
   } catch (e) {}
 }
 
@@ -323,49 +311,6 @@ async function syncToCloud() {
   } catch (e) {
     setSyncStatus('sync error: ' + e.message);
   }
-}
-
-async function manualSync() {
-  setSyncStatus('uploading...');
-  await syncToCloud();
-}
-
-async function syncFromCloud() {
-  try {
-    const res = await fetch('/api/data');
-    if (!res.ok) return;
-    const data = await res.json();
-
-    const localUsers = localStorage.getItem('edc-users');
-    const localSchedule = localStorage.getItem('edc-schedule');
-    const hasLocal = (localUsers && Object.keys(JSON.parse(localUsers)).length > 0) || localSchedule;
-
-    if (data.schedule && data.schedule.length > 0) {
-      schedule = data.schedule;
-      saveSchedule();
-    } else if (localSchedule) {
-      schedule = JSON.parse(localSchedule);
-    }
-
-    if (data.users && Object.keys(data.users).length > 0) {
-      if (hasLocal && localUsers) {
-        const localU = JSON.parse(localUsers);
-        const cloudU = data.users;
-        for (const u in cloudU) {
-          if (!localU[u]) localU[u] = cloudU[u];
-        }
-        allUsers = localU;
-        saveUsers();
-      } else {
-        allUsers = data.users;
-        saveUsers();
-      }
-    } else if (localUsers) {
-      allUsers = JSON.parse(localUsers);
-    }
-
-    syncToCloud();
-  } catch (e) {}
 }
 
 function login() {
