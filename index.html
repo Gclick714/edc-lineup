@@ -374,6 +374,26 @@ function timesOverlap(a, b) {
   return aStart < bEnd && bStart < aEnd;
 }
 
+function overlapMinutes(a, b) {
+  const aStart = parseTime(a.start, a.day);
+  let aEnd = parseTime(a.end, a.day);
+  if (aEnd <= aStart) aEnd += 1440;
+  const bStart = parseTime(b.start, b.day);
+  let bEnd = parseTime(b.end, b.day);
+  if (bEnd <= bStart) bEnd += 1440;
+  const overlapStart = Math.max(aStart, bStart);
+  const overlapEnd = Math.min(aEnd, bEnd);
+  return Math.max(0, overlapEnd - overlapStart);
+}
+
+function minsToTimeStr(totalMins) {
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h > 0 && m > 0) return h + 'h ' + m + 'm';
+  if (h > 0) return h + 'h';
+  return m + 'm';
+}
+
 function renderGroup() {
   const container = document.getElementById('group-tab');
   const allWithPicks = Object.keys(allUsers).filter(u => allUsers[u].length > 0);
@@ -410,10 +430,13 @@ function renderGroup() {
       collisions.forEach(c => {
         html += '<div class="collision-item">';
         html += '<div><span class="dj">' + c.sets.map(s => s.dj).join(' vs ') + '</span>';
+        const oMins = overlapMinutes(c.sets[0], c.sets[1]);
         html += '<div class="clash-info">';
-        c.sets.forEach(s => {
-          html += s.dj + ' (' + s.stage + ' ' + s.start + '-' + s.end + ') — wanted by ' + c.people.join(', ');
+        c.sets.forEach((s, si) => {
+          if (si > 0) html += '<br>';
+          html += s.dj + ' (' + s.stage + ' ' + s.start + '-' + s.end + ')';
         });
+        html += '<br>Overlaps ' + minsToTimeStr(oMins) + ' — wanted by ' + c.people.join(', ');
         html += '</div></div></div>';
       });
       html += '</div>';
