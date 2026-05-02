@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     try {
       const data = req.body;
       if (!data) return res.status(400).json({ error: 'No body' });
-      await put(BLOB_KEY, JSON.stringify(data), { allowOverwrite: true });
+      await put(BLOB_KEY, JSON.stringify(data), { access: 'public', allowOverwrite: true });
       return res.status(200).json({ ok: true });
     } catch (e) {
       return res.status(500).json({ error: e.message });
