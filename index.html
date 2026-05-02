@@ -199,6 +199,12 @@ function parseTime(t, day) {
   return h * 60 + m;
 }
 
+function sortTime(t) {
+  const val = parseTime(t);
+  if (val < 12 * 60) return val + 24 * 60;
+  return val;
+}
+
 function getStageColor(stage) {
   const lower = stage.toLowerCase();
   for (const [key, color] of Object.entries(STAGE_COLORS)) {
@@ -233,7 +239,7 @@ function renderSchedule() {
     const q = searchQuery.toLowerCase();
     filtered = filtered.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
   }
-  filtered.sort((a, b) => parseTime(a.start, a.day) - parseTime(b.start, b.day));
+  filtered.sort((a, b) => sortTime(a.start) - sortTime(b.start));
 
   let lastTime = '';
   filtered.forEach((s, i) => {
@@ -270,7 +276,7 @@ function renderMyPicks() {
   let items = picks.map(i => schedule[i]).filter(Boolean);
   items.sort((a, b) => {
     if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
-    return parseTime(a.start, a.day) - parseTime(b.start, b.day);
+    return sortTime(a.start) - sortTime(b.start);
   });
 
   let html = '<div class="schedule">';
@@ -346,7 +352,7 @@ function renderGroup() {
     let items = picks.map(i => schedule[i]).filter(Boolean);
     items.sort((a, b) => {
       if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
-      return parseTime(a.start, a.day) - parseTime(b.start, b.day);
+      return sortTime(a.start) - sortTime(b.start);
     });
     html += '<div class="person-card">';
     html += '<h3>' + user + ' (' + items.length + ' picks)</h3>';
