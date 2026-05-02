@@ -122,6 +122,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .conflict-detail{padding:8px 12px 8px 28px;border-bottom:1px solid var(--stage-border)}
 .conflict-detail-item{padding:6px 0;font-size:.8rem}
 .conflict-detail-item+.conflict-detail-item{border-top:1px solid var(--stage-border)}
+.pickers{display:flex;gap:4px;flex-shrink:0}
+.picker-tag{font-size:.65rem;padding:2px 6px;border-radius:4px;background:var(--card2);color:var(--accent);white-space:nowrap}
 </style>
 </head>
 <body>
@@ -429,9 +431,27 @@ function renderGroup() {
   }
   html += '</div>';
 
+  const pickMap = {};
+  shown.forEach(user => {
+    (allUsers[user] || []).forEach(idx => {
+      if (!pickMap[idx]) pickMap[idx] = [];
+      pickMap[idx].push(user);
+    });
+  });
+
+  let allItems = Object.entries(pickMap).map(([idx, users]) => ({ idx: parseInt(idx), s: schedule[parseInt(idx)], users })).filter(x => x.s);
+  allItems.sort((a, b) => {
+    if (a.s.day !== b.s.day) return ['Friday','Saturday','Sunday'].indexOf(a.s.day) - ['Friday','Saturday','Sunday'].indexOf(b.s.day);
+    return sortTime(a.s.start) - sortTime(b.s.start);
+  });
+
+  if (allItems.length === 0) {
+    container.innerHTML += '<div class="empty"><p>No picks to show.</p></div>';
+    return;
+  }
+
   let collisions = [];
   if (shown.length >= 2) collisions = findCollisions(shown);
-
   const conflictMap = {};
   collisions.forEach(c => {
     const sIdx0 = schedule.indexOf(c.sets[0]);
@@ -443,50 +463,41 @@ function renderGroup() {
   });
 
   let conflictId = 0;
-  shown.forEach(user => {
-    const picks = allUsers[user];
-    let items = picks.map(i => ({ idx: i, s: schedule[i] })).filter(x => x.s);
-    items.sort((a, b) => {
-      if (a.s.day !== b.s.day) return ['Friday','Saturday','Sunday'].indexOf(a.s.day) - ['Friday','Saturday','Sunday'].indexOf(b.s.day);
-      return sortTime(a.s.start) - sortTime(b.s.start);
-    });
-    html += '<div class="person-card">';
-    html += '<h3>' + user + ' (' + items.length + ' picks)</h3>';
-    let lastDay = '';
-    items.forEach(({ idx, s }) => {
-      if (s.day !== lastDay) {
-        html += '<div style="padding:6px 0 2px;font-size:.75rem;color:var(--accent);font-weight:700">' + s.day + '</div>';
-        lastDay = s.day;
-      }
-      const color = getStageColor(s.stage);
-      const conflicts = conflictMap[idx] || [];
-      const hasConflict = conflicts.length > 0;
-      const cid = 'conflict-' + conflictId++;
-      html += '<div class="set-item' + (hasConflict ? ' conflict-row' : '') + '" style="cursor:' + (hasConflict ? 'pointer' : 'default') + '"' + (hasConflict ? ' onclick="toggleConflict(\'' + cid + '\')"' : '') + '>';
-      if (hasConflict) html += '<span class="conflict-badge">⚡</span>';
-      html += '<span class="time">' + s.start + '</span>';
-      html += '<span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span>';
-      html += '<span style="color:var(--text2);font-size:.7rem;margin-left:auto">' + s.stage + '</span>';
-      html += '</div>';
-      if (hasConflict) {
-        html += '<div id="' + cid + '" class="conflict-detail" style="display:none">';
-        conflicts.forEach(c => {
-          const other = c.sets[0] === s ? c.sets[1] : c.sets[0];
-          const oMins = overlapMinutes(c.sets[0], c.sets[1]);
-          const otherIdx = schedule.indexOf(other);
-          const otherUser = c.people.find(p => p !== user) || user;
-          html += '<div class="conflict-detail-item">';
-          html += '<span style="color:var(--danger)">⚡</span> ';
-          html += 'Conflicts with <b>' + other.dj + '</b> (' + other.stage + ')';
-          html += '<br><span style="color:var(--text2)">' + other.start + ' - ' + other.end + ' &middot; wanted by ' + otherUser + '</span>';
-          html += '<br><span style="color:var(--danger)">Overlaps ' + minsToTimeStr(oMins) + '</span>';
-          html += '</div>';
-        });
-        html += '</div>';
-      }
-    });
+  html += '<div class="person-card">';
+  let lastDay = '';
+  allItems.forEach(({ idx, s, users }) => {
+    if (s.day !== lastDay) {
+      html += '<div style="padding:6px 0 2px;font-size:.75rem;color:var(--accent);font-weight:700">' + s.day + '</div>';
+      lastDay = s.day;
+    }
+    const color = getStageColor(s.stage);
+    const conflicts = conflictMap[idx] || [];
+    const hasConflict = conflicts.length > 0;
+    const cid = 'conflict-' + conflictId++;
+    html += '<div class="set-item' + (hasConflict ? ' conflict-row' : '') + '" style="cursor:' + (hasConflict ? 'pointer' : 'default') + '"' + (hasConflict ? ' onclick="toggleConflict(\'' + cid + '\')"' : '') + '>';
+    if (hasConflict) html += '<span class="conflict-badge">⚡</span>';
+    html += '<span class="time">' + s.start + '</span>';
+    html += '<span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span>';
+    html += '<span style="color:var(--text2);font-size:.7rem;margin-left:auto;padding-right:8px">' + s.stage + '</span>';
+    html += '<span class="pickers">' + users.map(u => '<span class="picker-tag">' + u + '</span>').join('') + '</span>';
     html += '</div>';
+    if (hasConflict) {
+      html += '<div id="' + cid + '" class="conflict-detail" style="display:none">';
+      conflicts.forEach(c => {
+        const other = c.sets[0] === s ? c.sets[1] : c.sets[0];
+        const oMins = overlapMinutes(c.sets[0], c.sets[1]);
+        const otherUser = c.people.find(p => !users.includes(p)) || c.people[0];
+        html += '<div class="conflict-detail-item">';
+        html += '<span style="color:var(--danger)">⚡</span> ';
+        html += 'Conflicts with <b>' + other.dj + '</b> (' + other.stage + ')';
+        html += '<br><span style="color:var(--text2)">' + other.start + ' - ' + other.end + ' &middot; wanted by ' + otherUser + '</span>';
+        html += '<br><span style="color:var(--danger)">Overlaps ' + minsToTimeStr(oMins) + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
   });
+  html += '</div>';
 
   container.innerHTML = html;
 }
