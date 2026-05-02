@@ -188,6 +188,7 @@ let allUsers = {};
 let currentDay = 'Friday';
 let searchQuery = '';
 let groupHidden = [];
+let syncTimer = null;
 
 async function loadSchedule() {
   const res = await fetch('schedule.json');
@@ -203,6 +204,7 @@ async function loadSchedule() {
 
 function saveSchedule() {
   localStorage.setItem('edc-schedule', JSON.stringify(schedule));
+  scheduleSync();
 }
 
 function loadUsers() {
@@ -212,6 +214,60 @@ function loadUsers() {
 
 function saveUsers() {
   localStorage.setItem('edc-users', JSON.stringify(allUsers));
+  scheduleSync();
+}
+
+function scheduleSync() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncToCloud, 2000);
+}
+
+async function syncToCloud() {
+  try {
+    await fetch('/api/data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ users: allUsers, schedule: schedule })
+    });
+  } catch (e) {}
+}
+
+async function syncFromCloud() {
+  try {
+    const res = await fetch('/api/data');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const localUsers = localStorage.getItem('edc-users');
+    const localSchedule = localStorage.getItem('edc-schedule');
+    const hasLocal = (localUsers && Object.keys(JSON.parse(localUsers)).length > 0) || localSchedule;
+
+    if (data.schedule && data.schedule.length > 0) {
+      schedule = data.schedule;
+      saveSchedule();
+    } else if (localSchedule) {
+      schedule = JSON.parse(localSchedule);
+    }
+
+    if (data.users && Object.keys(data.users).length > 0) {
+      if (hasLocal && localUsers) {
+        const localU = JSON.parse(localUsers);
+        const cloudU = data.users;
+        for (const u in cloudU) {
+          if (!localU[u]) localU[u] = cloudU[u];
+        }
+        allUsers = localU;
+        saveUsers();
+      } else {
+        allUsers = data.users;
+        saveUsers();
+      }
+    } else if (localUsers) {
+      allUsers = JSON.parse(localUsers);
+    }
+
+    syncToCloud();
+  } catch (e) {}
 }
 
 function login() {
@@ -711,6 +767,7 @@ document.getElementById('name-input').addEventListener('keydown', e => {
 (async function init() {
   await loadSchedule();
   loadUsers();
+  await syncFromCloud();
   renderLoginUsers();
 })();
 </script>
