@@ -105,6 +105,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .edit-add-btn:hover{border-color:var(--accent);color:var(--accent)}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);padding:12px 24px;background:var(--success);color:#000;border-radius:8px;font-weight:600;font-size:.9rem;z-index:100;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
+.user-buttons{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:20px}
+.user-btn{padding:12px 24px;border:1px solid var(--stage-border);border-radius:10px;background:var(--card);color:var(--text);font-size:.95rem;font-weight:600;cursor:pointer;transition:all .15s}
+.user-btn:hover{border-color:var(--accent);background:var(--card2)}
+.admin-card{background:var(--card);border-radius:10px;padding:16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+.admin-card .user-info{font-weight:600}
+.admin-card .pick-count{font-size:.8rem;color:var(--text2)}
+.admin-card .btn-rm{padding:8px 16px;border:1px solid var(--danger);border-radius:8px;background:transparent;color:var(--danger);font-size:.8rem;font-weight:600;cursor:pointer}
+.admin-card .btn-rm:hover{background:rgba(255,64,129,.1)}
 </style>
 </head>
 <body>
@@ -118,6 +126,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <input type="text" id="name-input" placeholder="Enter your name" maxlength="30" autofocus>
       <button onclick="login()">Enter</button>
     </div>
+    <div id="existing-users" class="user-buttons"></div>
   </div>
 
   <div id="main-screen" class="screen">
@@ -130,11 +139,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <button class="tab" onclick="showTab('my-picks')">My Picks</button>
       <button class="tab" onclick="showTab('group')">Group</button>
       <button class="tab" onclick="showTab('edit')">Edit</button>
+      <button class="tab" id="admin-tab-btn" style="display:none" onclick="showTab('admin')">Admin</button>
     </div>
     <div id="schedule-tab"></div>
     <div id="my-picks-tab" style="display:none"></div>
     <div id="group-tab" style="display:none"></div>
     <div id="edit-tab" style="display:none"></div>
+    <div id="admin-tab" style="display:none"></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -194,12 +205,22 @@ function saveUsers() {
 function login() {
   const name = document.getElementById('name-input').value.trim();
   if (!name) return;
+  loginAs(name);
+}
+
+function loginAs(name) {
   currentUser = name;
   if (!allUsers[name]) allUsers[name] = [];
   saveUsers();
   document.getElementById('current-user').textContent = name;
   document.getElementById('login-screen').classList.remove('active');
   document.getElementById('main-screen').classList.add('active');
+  document.getElementById('name-input').value = '';
+  if (name === 'Vince') {
+    document.getElementById('admin-tab-btn').style.display = '';
+  } else {
+    document.getElementById('admin-tab-btn').style.display = 'none';
+  }
   renderSchedule();
 }
 
@@ -209,6 +230,7 @@ function switchUser() {
   document.getElementById('login-screen').classList.add('active');
   document.getElementById('name-input').value = '';
   document.getElementById('name-input').focus();
+  renderLoginUsers();
 }
 
 function showTab(tab) {
@@ -218,10 +240,12 @@ function showTab(tab) {
   document.getElementById('my-picks-tab').style.display = tab === 'my-picks' ? '' : 'none';
   document.getElementById('group-tab').style.display = tab === 'group' ? '' : 'none';
   document.getElementById('edit-tab').style.display = tab === 'edit' ? '' : 'none';
+  document.getElementById('admin-tab').style.display = tab === 'admin' ? '' : 'none';
   if (tab === 'schedule') renderSchedule();
   if (tab === 'my-picks') renderMyPicks();
   if (tab === 'group') renderGroup();
   if (tab === 'edit') renderEdit();
+  if (tab === 'admin') renderAdmin();
 }
 
 function parseTime(t, day) {
@@ -548,6 +572,43 @@ function addNewEntry() {
   renderEdit();
 }
 
+function renderLoginUsers() {
+  const container = document.getElementById('existing-users');
+  const users = Object.keys(allUsers);
+  if (users.length === 0) { container.innerHTML = ''; return; }
+  let html = '';
+  users.sort();
+  users.forEach(u => {
+    html += '<button class="user-btn" onclick="loginAs(\'' + u.replace(/'/g, "\\'") + '\')">' + u + '</button>';
+  });
+  container.innerHTML = html;
+}
+
+function renderAdmin() {
+  const container = document.getElementById('admin-tab');
+  const users = Object.keys(allUsers).filter(u => u !== 'Vince');
+  if (users.length === 0) {
+    container.innerHTML = '<div class="empty"><div class="icon">👤</div><p>No other users yet.</p></div>';
+    return;
+  }
+  let html = '';
+  users.sort().forEach(u => {
+    const count = (allUsers[u] || []).length;
+    html += '<div class="admin-card">';
+    html += '<div><div class="user-info">' + u + '</div><div class="pick-count">' + count + ' pick' + (count !== 1 ? 's' : '') + '</div></div>';
+    html += '<button class="btn-rm" onclick="adminRemoveUser(\'' + u.replace(/'/g, "\\'") + '\')">Remove</button>';
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function adminRemoveUser(name) {
+  delete allUsers[name];
+  saveUsers();
+  renderAdmin();
+  showToast('Removed ' + name);
+}
+
 function removeUser(name) {
   delete allUsers[name];
   saveUsers();
@@ -561,6 +622,7 @@ document.getElementById('name-input').addEventListener('keydown', e => {
 (async function init() {
   await loadSchedule();
   loadUsers();
+  renderLoginUsers();
 })();
 </script>
 </body>
