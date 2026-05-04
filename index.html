@@ -293,12 +293,6 @@ function setSyncStatus(msg) {
 }
 
 async function syncToCloud() {
-  // Don't push data to cloud if we haven't verified we have the latest cloud data
-  if (!cloudSynced) {
-    console.log('[syncToCloud] BAILED: cloudSynced is false, setting "waiting for sync..."');
-    setSyncStatus('waiting for sync...');
-    return;
-  }
   setSyncStatus('syncing...');
   try {
     // First, fetch the current cloud state to merge authoritatively
@@ -377,14 +371,11 @@ async function manualSync() {
   renderSchedule();
 }
 
-let cloudSynced = false; // guard: true only after a successful cloud fetch
-
 async function syncFromCloud() {
   try {
     console.log('[syncFromCloud] fetching for group:', currentGroup);
     const res = await fetch('/api/data?group=' + encodeURIComponent(currentGroup));
-    console.log('[syncFromCloud] response status:', res.status, 'ok:', res.ok);
-    if (!res.ok) { console.log('[syncFromCloud] BAILED: !res.ok, cloudSynced stays false'); return; }
+    if (!res.ok) return;
     const data = await res.json();
 
     // Build a set of cloud users that are tombstoned (deleted by admin via null)
@@ -471,12 +462,9 @@ async function syncFromCloud() {
       localStorage.setItem('edc-schedule-additions', JSON.stringify(mergedAdditions));
     }
 
-    cloudSynced = true; // mark successful cloud fetch
-    console.log('[syncFromCloud] SUCCESS: cloudSynced set to true');
+    console.log('[syncFromCloud] SUCCESS');
   } catch (e) {
-    // If we haven't ever synced from cloud, don't allow pushing stale data up
-    console.log('[syncFromCloud] CATCH ERROR:', e.message, '- cloudSynced stays', cloudSynced);
-    cloudSynced = false;
+    console.log('[syncFromCloud] CATCH ERROR:', e.message);
   }
 }
 
