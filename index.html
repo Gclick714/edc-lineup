@@ -8,6 +8,7 @@
   <meta property="og:description" content="Plan your EDC Las Vegas 2026 schedule with friends. Pick your DJs and find conflicts.">
   <meta property="og:type" content="website">
   <meta name="description" content="Plan your EDC Las Vegas 2026 schedule with friends.">
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -124,6 +125,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .conflict-detail-item+.conflict-detail-item{border-top:1px solid var(--stage-border)}
 .pickers{display:flex;gap:4px;flex-shrink:0}
 .picker-tag{font-size:.65rem;padding:2px 6px;border-radius:4px;background:var(--card2);color:var(--accent);white-space:nowrap}
+.must-see-btn{background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text2);transition:transform .15s;flex-shrink:0;width:36px;text-align:center}
+.must-see-btn.active{color:var(--accent)}
+.must-see-btn:hover{transform:scale(1.15)}
+.mustsee-tag{font-size:.65rem;padding:2px 6px;border-radius:4px;background:rgba(224,64,251,.15);color:var(--accent);white-space:nowrap;font-weight:700}
+.save-img-btn{padding:6px 10px;border:1px solid var(--stage-border);border-radius:8px;background:transparent;color:var(--text2);font-size:.7rem;cursor:pointer;transition:all .15s}
+.save-img-btn:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -187,6 +194,7 @@ const STAGE_COLORS = {
 let schedule = [];
 let currentUser = '';
 let allUsers = {};
+let mustSee = {};
 let currentDay = 'Friday';
 let searchQuery = '';
 let groupHidden = [];
@@ -227,9 +235,12 @@ function setSyncStatus(msg) {
 async function syncToCloud() {
   setSyncStatus('syncing...');
   try {
-    const payload = { users: {}, schedule: schedule };
+    const payload = { users: {}, mustSee: {}, schedule: schedule };
     for (const u in allUsers) {
       payload.users[u] = allUsers[u].slice();
+    }
+    for (const u in mustSee) {
+      payload.mustSee[u] = mustSee[u].slice();
     }
     const res = await fetch('/api/data', {
       method: 'POST',
@@ -278,6 +289,16 @@ async function syncFromCloud() {
       allUsers = newUsers;
       localStorage.setItem('edc-users', JSON.stringify(allUsers));
     }
+
+    if (data.mustSee && Object.keys(data.mustSee).length > 0) {
+      const newMustSee = {};
+      for (const user in data.mustSee) {
+        const userMust = data.mustSee[user];
+        newMustSee[user] = Array.isArray(userMust) ? [...userMust] : [];
+      }
+      mustSee = newMustSee;
+      localStorage.setItem('edc-must-see', JSON.stringify(mustSee));
+    }
   } catch (e) {}
 }
 
@@ -293,6 +314,43 @@ function saveUsers() {
   localStorage.setItem('edc-users', JSON.stringify(allUsers));
   console.log('DEBUG: allUsers saved to localStorage:', JSON.stringify(allUsers, null, 2));
   scheduleSync();
+}
+
+function loadMustSee() {
+  const data = localStorage.getItem('edc-must-see');
+  if (data) {
+    try { mustSee = JSON.parse(data); } catch(e) { mustSee = {}; }
+  }
+}
+
+function saveMustSee() {
+  localStorage.setItem('edc-must-see', JSON.stringify(mustSee));
+  scheduleSync();
+}
+
+function toggleMustSee(idx) {
+  if (!currentUser) return;
+  if (!mustSee[currentUser]) mustSee[currentUser] = [];
+  const i = mustSee[currentUser].indexOf(idx);
+  if (i >= 0) mustSee[currentUser].splice(i, 1);
+  else mustSee[currentUser].push(idx);
+  saveMustSee();
+  renderMyPicks();
+}
+
+function saveGroupHidden() {
+  if (currentUser) {
+    localStorage.setItem('edc-group-hidden-' + currentUser, JSON.stringify(groupHidden));
+  }
+}
+
+function loadGroupHidden() {
+  if (currentUser) {
+    const data = localStorage.getItem('edc-group-hidden-' + currentUser);
+    groupHidden = data ? JSON.parse(data) : [];
+  } else {
+    groupHidden = [];
+  }
 }
 
 function scheduleSync() {
@@ -321,6 +379,8 @@ function loginAs(name) {
     console.error('User data corrupted for', name, allUsers[name]);
     allUsers[name] = [];
   }
+  if (!mustSee[name]) mustSee[name] = [];
+  loadGroupHidden();
   console.log('DEBUG: After loginAs, currentUser =', currentUser, '| allUsers[' + name + '] =', allUsers[name]);
   saveUsers();
   document.getElementById('current-user').textContent = name;
@@ -432,10 +492,11 @@ function renderSchedule() {
   });
 
   container.innerHTML = html;
+  restoreScheduleSearchFocus();
 }
 
 function setDay(d) { currentDay = d; renderSchedule(); }
-function onSearch(v) { searchQuery = v; renderSchedule(); }
+function onSearch(v) { searchQuery = v; renderSchedule(); restoreScheduleSearchFocus(); }
 
 function renderMyPicks() {
   const container = document.getElementById('my-picks-tab');
@@ -450,6 +511,8 @@ function renderMyPicks() {
     return sortTime(a.start) - sortTime(b.start);
   });
 
+  const myMust = mustSee[currentUser] || [];
+
   let html = '<div class="schedule">';
   let lastDay = '';
   items.forEach((s, i) => {
@@ -459,8 +522,10 @@ function renderMyPicks() {
     }
     const idx = schedule.indexOf(s);
     const color = getStageColor(s.stage);
+    const isMust = myMust.includes(idx);
     html += '<div class="set-card hearted">';
     html += '<button class="heart-btn active" onclick="toggleHeartMyPicks(' + idx + ')">❤️</button>';
+    html += '<button class="must-see-btn' + (isMust ? ' active' : '') + '" onclick="toggleMustSee(' + idx + ')">' + (isMust ? '⭐' : '☆') + '</button>';
     html += '<div class="info">';
     html += '<div class="dj-name">' + s.dj + '</div>';
     html += '<div class="meta">';
@@ -532,6 +597,11 @@ function renderGroup() {
     html += '</div>';
   }
   html += '</div>';
+  html += '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">';
+  html += '<button class="save-img-btn" onclick="saveGroupAsImage(\'Friday\')">📸 Save Friday</button>';
+  html += '<button class="save-img-btn" onclick="saveGroupAsImage(\'Saturday\')">📸 Save Saturday</button>';
+  html += '<button class="save-img-btn" onclick="saveGroupAsImage(\'Sunday\')">📸 Save Sunday</button>';
+  html += '</div>';
 
   const pickMap = {};
   shown.forEach(user => {
@@ -581,7 +651,13 @@ function renderGroup() {
     html += '<span class="time">' + s.start + '</span>';
     html += '<span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span>';
     html += '<span style="color:var(--text2);font-size:.7rem;margin-left:auto;padding-right:8px">' + s.stage + '</span>';
-    html += '<span class="pickers">' + users.map(u => '<span class="picker-tag">' + u + '</span>').join('') + '</span>';
+    html += '<span class="pickers">' + users.map(u => {
+      let tag = '<span class="picker-tag">' + u + '</span>';
+      if ((mustSee[u] || []).includes(idx)) {
+        tag += '<span class="mustsee-tag">⭐</span>';
+      }
+      return tag;
+    }).join('') + '</span>';
     html += '</div>';
     if (hasConflict) {
       html += '<div id="' + cid + '" class="conflict-detail" style="display:none">';
@@ -604,13 +680,82 @@ function renderGroup() {
   container.innerHTML = html;
 }
 
+function saveGroupAsImage(day) {
+  const allWithPicks = Object.keys(allUsers).filter(u => allUsers[u].length > 0 && !groupHidden.includes(u));
+  const pickMap = {};
+  allWithPicks.forEach(user => {
+    (allUsers[user] || []).forEach(idx => {
+      if (!pickMap[idx]) pickMap[idx] = [];
+      pickMap[idx].push(user);
+    });
+  });
+
+  let allItems = Object.entries(pickMap).map(([idx, users]) => ({ idx: parseInt(idx), s: schedule[parseInt(idx)], users })).filter(x => x.s && x.s.day === day);
+  allItems.sort((a, b) => sortTime(a.s.start) - sortTime(b.s.start));
+
+  if (allItems.length === 0) {
+    showToast('No picks for ' + day);
+    return;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'background:#1a1a2e;padding:20px;width:400px;font-family:system-ui,sans-serif;color:#e0e0e0;border-radius:12px';
+  let html = '<h2 style="margin:0 0 8px;font-size:1.2rem;color:#e040fb">EDC 2026 - ' + day + '</h2>';
+  html += '<div style="font-size:.8rem;color:#888;margin-bottom:12px">Picks: ' + allWithPicks.join(', ') + '</div>';
+
+  allItems.forEach(({ idx, s, users }) => {
+    const color = getStageColor(s.stage);
+    html += '<div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #333;gap:8px">';
+    html += '<span style="font-size:.75rem;color:#888;width:70px;flex-shrink:0">' + s.start + '</span>';
+    html += '<span style="border-left:3px solid ' + color + ';padding-left:8px;font-weight:600;font-size:.85rem">' + s.dj + '</span>';
+    html += '<span style="margin-left:auto;font-size:.7rem;color:#888;padding-right:8px">' + s.stage + '</span>';
+    html += '<span style="font-size:.7rem;display:flex;gap:4px;flex-wrap:wrap">';
+    users.forEach(u => {
+      html += '<span style="background:rgba(224,64,251,.15);padding:2px 8px;border-radius:4px;font-size:.65rem;font-weight:600">' + u + '</span>';
+      if ((mustSee[u] || []).includes(idx)) {
+        html += '<span style="font-size:.65rem">⭐</span>';
+      }
+    });
+    html += '</span></div>';
+  });
+
+  wrapper.innerHTML = html;
+  document.body.appendChild(wrapper);
+
+  html2canvas(wrapper, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#1a1a2e',
+    logging: false
+  }).then(canvas => {
+    document.body.removeChild(wrapper);
+    const link = document.createElement('a');
+    link.download = 'EDC-2026-' + day.replace(/\s+/g, '-') + '-Picks.png';
+    link.href = canvas.toDataURL('image/png');
+    if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+      canvas.toBlob(blob => {
+        if (blob) {
+          navigator.share({ title: 'EDC 2026 ' + day + ' Picks', files: [new File([blob], link.download, { type: 'image/png' })] }).catch(() => link.click());
+        } else { link.click(); }
+      });
+    } else { link.click(); }
+    showToast('Image saved!');
+  }).catch(err => {
+    document.body.removeChild(wrapper);
+    console.error(err);
+    showToast('Error generating image');
+  });
+}
+
 function hideFromGroup(name) {
   if (!groupHidden.includes(name)) groupHidden.push(name);
+  saveGroupHidden();
   renderGroup();
 }
 
 function showInGroup(name) {
   groupHidden = groupHidden.filter(u => u !== name);
+  saveGroupHidden();
   renderGroup();
 }
 
@@ -723,6 +868,11 @@ function restoreSearchFocus() {
   if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
 }
 
+function restoreScheduleSearchFocus() {
+  const input = document.querySelector('#schedule-tab .search-bar');
+  if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+}
+
 function startEdit(idx) { editingIdx = idx; renderEdit(); }
 
 function cancelEdit() { editingIdx = null; renderEdit(); }
@@ -813,6 +963,7 @@ document.getElementById('name-input').addEventListener('keydown', e => {
 (async function init() {
   await loadSchedule();
   loadUsers();
+  loadMustSee();
   await syncFromCloud();
   renderLoginUsers();
 })();
