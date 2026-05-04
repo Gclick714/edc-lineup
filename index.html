@@ -318,9 +318,12 @@ async function syncToCloud() {
       if (allUsers[u]) mergedUsers[u] = allUsers[u].slice();
       else mergedUsers[u] = []; // keep user with empty picks
     }
-    // Add any new local users that don't exist in cloud yet
+    // Add any new local users that don't exist in cloud yet AND aren't tombstoned
     for (const u in allUsers) {
-      if (!mergedUsers[u]) mergedUsers[u] = allUsers[u].slice();
+      if (!mergedUsers[u]) {
+        if (cloudUsers[u] === null) continue; // admin-deleted, don't resurrect
+        mergedUsers[u] = allUsers[u].slice();
+      }
     }
 
     const mergedMustSee = {};
@@ -330,7 +333,10 @@ async function syncToCloud() {
       else mergedMustSee[u] = [];
     }
     for (const u in mustSee) {
-      if (!mergedMustSee[u]) mergedMustSee[u] = mustSee[u].slice();
+      if (!mergedMustSee[u]) {
+        if (cloudMustSee[u] === null) continue;
+        mergedMustSee[u] = mustSee[u].slice();
+      }
     }
 
     const payload = { group: currentGroup, users: mergedUsers, mustSee: mergedMustSee };

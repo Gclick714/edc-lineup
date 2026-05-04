@@ -118,7 +118,7 @@ export default async function handler(req, res) {
 
         // Merge: three-state authority model for users.
         //   undefined (key absent) → brand new user, ALLOW
-        //   null (tombstone)      → admin-deleted, BLOCK
+        //   null (tombstone)      → admin-deleted, BLOCK permanently
         //   Array[]               → existing user, ALLOW incoming picks
         // Cloud is authoritative for WHICH users exist.
         const payload = {};
@@ -127,15 +127,17 @@ export default async function handler(req, res) {
           for (const u in users) {
             const cloudVal = existingUsers[u];
             if (cloudVal === null) {
-              // Admin-deleted (tombstone) — skip, don't resurrect
+              // Admin-deleted (tombstone) — skip incoming, preserve tombstone
+              mergedUsers[u] = null;
               continue;
             }
             // New user (undefined) or existing user (Array) — accept incoming picks
             mergedUsers[u] = users[u];
           }
           // Users only in cloud (admin hasn't deleted them) — keep cloud picks
+          // Also preserve null tombstones so they survive sync cycles
           for (const u in existingUsers) {
-            if (existingUsers[u] !== null && !mergedUsers[u]) {
+            if (!mergedUsers.hasOwnProperty(u)) {
               mergedUsers[u] = existingUsers[u];
             }
           }
@@ -145,11 +147,14 @@ export default async function handler(req, res) {
           const mergedMustSee = {};
           for (const u in mustSee) {
             const cloudVal = existingMustSee[u];
-            if (cloudVal === null) continue;
+            if (cloudVal === null) {
+              mergedMustSee[u] = null;
+              continue;
+            }
             mergedMustSee[u] = mustSee[u];
           }
           for (const u in existingMustSee) {
-            if (existingMustSee[u] !== null && !mergedMustSee[u]) {
+            if (!mergedMustSee.hasOwnProperty(u)) {
               mergedMustSee[u] = existingMustSee[u];
             }
           }
