@@ -101,9 +101,54 @@ export default async function handler(req, res) {
       // Store user data (users + mustSee) for a group
       if (users || mustSee) {
         const key = userKey(group);
+
+        // Fetch current cloud state FIRST — admin deletions are authoritative.
+        // This prevents stale clients from resurrecting admin-deleted users.
+        let existingUsers = {};
+        let existingMustSee = {};
+        try {
+          const { blobs } = await list({ prefix: key });
+          if (blobs.length > 0) {
+            const resp = await fetch(blobs[0].url);
+            const current = await resp.json();
+            if (current.users) existingUsers = current.users;
+            if (current.mustSee) existingMustSee = current.mustSee;
+          }
+        } catch (e) { /* ignore read errors */ }
+
+        // Merge: cloud is authoritative for WHICH users exist (admin deletions).
+        // Incoming request wins for picks of users that exist in cloud.
         const payload = {};
-        if (users) payload.users = users;
-        if (mustSee) payload.mustSee = mustSee;
+        if (users && Object.keys(users).length > 0) {
+          const mergedUsers = {};
+          // Users that exist in BOTH cloud AND incoming request → use incoming picks
+          for (const u in users) {
+            if (existingUsers[u] !== undefined) {
+              mergedUsers[u] = users[u];
+            }
+          }
+          // Users that exist ONLY in cloud (admin hasn't deleted them) → keep cloud picks
+          for (const u in existingUsers) {
+            if (!mergedUsers[u]) {
+              mergedUsers[u] = existingUsers[u];
+            }
+          }
+          payload.users = mergedUsers;
+        }
+        if (mustSee && Object.keys(mustSee).length > 0) {
+          const mergedMustSee = {};
+          for (const u in mustSee) {
+            if (existingMustSee[u] !== undefined) {
+              mergedMustSee[u] = mustSee[u];
+            }
+          }
+          for (const u in existingMustSee) {
+            if (!mergedMustSee[u]) {
+              mergedMustSee[u] = existingMustSee[u];
+            }
+          }
+          payload.mustSee = mergedMustSee;
+        }
         await put(key, JSON.stringify(payload), { access: 'public', allowOverwrite: true });
         return res.status(200).json({ ok: true });
       }

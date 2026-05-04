@@ -295,13 +295,43 @@ async function syncToCloud() {
   }
   setSyncStatus('syncing...');
   try {
-    const payload = { group: currentGroup, users: {}, mustSee: {} };
+    // First, fetch the current cloud state to merge authoritatively
+    // This prevents stale local data from resurrecting admin-deleted users
+    let cloudUsers = {};
+    let cloudMustSee = {};
+    try {
+      const cloudRes = await fetch('/api/data?group=' + encodeURIComponent(currentGroup));
+      if (cloudRes.ok) {
+        const cloudData = await cloudRes.json();
+        if (cloudData.users) cloudUsers = cloudData.users;
+        if (cloudData.mustSee) cloudMustSee = cloudData.mustSee;
+      }
+    } catch(e) {}
+
+    // Merge: cloud is authoritative for which users exist (admin deletions)
+    // Local is authoritative for picks (most recent hearts)
+    const mergedUsers = {};
+    // First, include all cloud users (users not deleted by admin)
+    for (const u in cloudUsers) {
+      // If local has this user, use local picks (more recent)
+      if (allUsers[u]) mergedUsers[u] = allUsers[u].slice();
+      else mergedUsers[u] = []; // keep user with empty picks
+    }
+    // Add any new local users that don't exist in cloud yet
     for (const u in allUsers) {
-      payload.users[u] = allUsers[u].slice();
+      if (!mergedUsers[u]) mergedUsers[u] = allUsers[u].slice();
+    }
+
+    const mergedMustSee = {};
+    for (const u in cloudMustSee) {
+      if (mustSee[u]) mergedMustSee[u] = mustSee[u].slice();
+      else mergedMustSee[u] = [];
     }
     for (const u in mustSee) {
-      payload.mustSee[u] = mustSee[u].slice();
+      if (!mergedMustSee[u]) mergedMustSee[u] = mustSee[u].slice();
     }
+
+    const payload = { group: currentGroup, users: mergedUsers, mustSee: mergedMustSee };
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -309,6 +339,9 @@ async function syncToCloud() {
     });
     const json = await res.json();
     if (json.ok) {
+      // Update local state to match what was sent (so admin removals take effect locally too)
+      allUsers = mergedUsers;
+      localStorage.setItem(gk('edc-users'), JSON.stringify(allUsers));
       setSyncStatus('synced');
       setTimeout(() => setSyncStatus(''), 3000);
     } else {
