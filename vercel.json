@@ -1,6 +1,6 @@
 {
   "rewrites": [
-    { "source": "/g/(?<group>[^/]+)", "destination": "/api/og?group=$group" },
+    { "source": "/g/:group", "destination": "/api/og?group=:group" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
