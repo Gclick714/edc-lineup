@@ -65,7 +65,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .person-card h3{font-size:1rem;margin-bottom:10px;color:var(--accent)}
 .person-card .set-item{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:.85rem;border-bottom:1px solid var(--stage-border)}
 .person-card .set-item:last-child{border:none}
-.person-card .set-item .time{color:var(--text2);min-width:90px;font-size:.75rem}
+.person-card .set-item .time{color:var(--text2);min-width:140px;font-size:.75rem}
 
 .collision-banner{background:rgba(255,64,129,.1);border:1px solid rgba(255,64,129,.3);border-radius:10px;padding:16px;margin-bottom:16px}
 .collision-banner h3{color:var(--danger);font-size:1rem;margin-bottom:8px}
@@ -131,6 +131,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .mustsee-tag{font-size:.65rem;padding:2px 6px;border-radius:4px;background:rgba(224,64,251,.15);color:var(--accent);white-space:nowrap;font-weight:700}
 .save-img-btn{padding:6px 10px;border:1px solid var(--stage-border);border-radius:8px;background:transparent;color:var(--text2);font-size:.7rem;cursor:pointer;transition:all .15s}
 .save-img-btn:hover{border-color:var(--accent);color:var(--accent)}
+.group-bar{display:flex;align-items:center;gap:8px;justify-content:center;margin:12px 0 8px;flex-wrap:wrap}
+.group-bar span{color:var(--accent);font-weight:600;font-size:.85rem}
+.group-bar button{padding:8px 14px;border:1px solid var(--stage-border);border-radius:8px;background:transparent;color:var(--text2);font-size:.8rem;cursor:pointer;transition:all .15s}
+.group-bar button:hover{border-color:var(--accent);color:var(--accent)}
 </style>
 </head>
 <body>
@@ -144,6 +148,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <input type="text" id="name-input" placeholder="Enter your name" maxlength="30" autofocus>
       <button onclick="login()">Enter</button>
     </div>
+    <div class="group-bar" id="login-group-bar">
+      <span id="group-name-display"></span>
+      <button onclick="newGroup()">+ New Group</button>
+      <button onclick="shareGroup()">🔗 Share Group</button>
+    </div>
     <div id="existing-users" class="user-buttons"></div>
   </div>
 
@@ -152,6 +161,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
       <span>🎵 <span class="name" id="current-user"></span></span>
       <span id="sync-status" style="font-size:.7rem;color:var(--text2)"></span>
       <button onclick="manualSync()">Sync</button>
+      <button onclick="shareGroup()">🔗 Share</button>
       <button onclick="switchUser()">Switch User</button>
     </div>
     <div class="tabs">
@@ -195,10 +205,16 @@ let schedule = [];
 let currentUser = '';
 let allUsers = {};
 let mustSee = {};
+let currentGroup = 'default';
+let groupNames = {};
 let currentDay = 'Friday';
 let searchQuery = '';
 let groupHidden = [];
 let syncTimer = null;
+
+function gk(suffix) {
+  return suffix + '-' + currentGroup;
+}
 
 async function loadSchedule() {
   const res = await fetch('schedule.json');
@@ -217,11 +233,6 @@ function saveSchedule() {
   scheduleSync();
 }
 
-function saveUsers() {
-  localStorage.setItem('edc-users', JSON.stringify(allUsers));
-  scheduleSync();
-}
-
 function scheduleSync() {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(syncToCloud, 2000);
@@ -235,7 +246,7 @@ function setSyncStatus(msg) {
 async function syncToCloud() {
   setSyncStatus('syncing...');
   try {
-    const payload = { users: {}, mustSee: {}, schedule: schedule };
+    const payload = { group: currentGroup, users: {}, mustSee: {} };
     for (const u in allUsers) {
       payload.users[u] = allUsers[u].slice();
     }
@@ -268,26 +279,18 @@ async function manualSync() {
 
 async function syncFromCloud() {
   try {
-    const res = await fetch('/api/data');
+    const res = await fetch('/api/data?group=' + encodeURIComponent(currentGroup));
     if (!res.ok) return;
     const data = await res.json();
-    console.log('DEBUG: Data received from cloud:', JSON.stringify(data.users, null, 2));
-
-    if (data.schedule && data.schedule.length > 0) {
-      schedule = data.schedule;
-      localStorage.setItem('edc-schedule', JSON.stringify(schedule));
-    }
 
     if (data.users && Object.keys(data.users).length > 0) {
-      // Create fresh object with defensive copies to prevent data mixing
       const newUsers = {};
       for (const user in data.users) {
         const userPicks = data.users[user];
         newUsers[user] = Array.isArray(userPicks) ? [...userPicks] : [];
       }
-      console.log('DEBUG: allUsers created from cloud:', JSON.stringify(newUsers, null, 2));
       allUsers = newUsers;
-      localStorage.setItem('edc-users', JSON.stringify(allUsers));
+      localStorage.setItem(gk('edc-users'), JSON.stringify(allUsers));
     }
 
     if (data.mustSee && Object.keys(data.mustSee).length > 0) {
@@ -297,34 +300,32 @@ async function syncFromCloud() {
         newMustSee[user] = Array.isArray(userMust) ? [...userMust] : [];
       }
       mustSee = newMustSee;
-      localStorage.setItem('edc-must-see', JSON.stringify(mustSee));
+      localStorage.setItem(gk('edc-must-see'), JSON.stringify(mustSee));
     }
   } catch (e) {}
 }
 
 function loadUsers() {
-  const data = localStorage.getItem('edc-users');
+  const data = localStorage.getItem(gk('edc-users'));
   if (data) {
     allUsers = JSON.parse(data);
-    console.log('DEBUG: allUsers loaded from localStorage:', JSON.stringify(allUsers, null, 2));
   }
 }
 
 function saveUsers() {
-  localStorage.setItem('edc-users', JSON.stringify(allUsers));
-  console.log('DEBUG: allUsers saved to localStorage:', JSON.stringify(allUsers, null, 2));
+  localStorage.setItem(gk('edc-users'), JSON.stringify(allUsers));
   scheduleSync();
 }
 
 function loadMustSee() {
-  const data = localStorage.getItem('edc-must-see');
+  const data = localStorage.getItem(gk('edc-must-see'));
   if (data) {
     try { mustSee = JSON.parse(data); } catch(e) { mustSee = {}; }
   }
 }
 
 function saveMustSee() {
-  localStorage.setItem('edc-must-see', JSON.stringify(mustSee));
+  localStorage.setItem(gk('edc-must-see'), JSON.stringify(mustSee));
   scheduleSync();
 }
 
@@ -340,13 +341,13 @@ function toggleMustSee(idx) {
 
 function saveGroupHidden() {
   if (currentUser) {
-    localStorage.setItem('edc-group-hidden-' + currentUser, JSON.stringify(groupHidden));
+    localStorage.setItem(gk('edc-group-hidden-' + currentUser), JSON.stringify(groupHidden));
   }
 }
 
 function loadGroupHidden() {
   if (currentUser) {
-    const data = localStorage.getItem('edc-group-hidden-' + currentUser);
+    const data = localStorage.getItem(gk('edc-group-hidden-' + currentUser));
     groupHidden = data ? JSON.parse(data) : [];
   } else {
     groupHidden = [];
@@ -372,6 +373,7 @@ function login() {
 function loginAs(name) {
   console.log('DEBUG: Logging in as', name, '| Current allUsers:', JSON.stringify(allUsers, null, 2));
   currentUser = name;
+  localStorage.setItem('edc-current-user', name);
   // Ensure user has a fresh array (defensive copy if it exists)
   if (!allUsers[name]) {
     allUsers[name] = [];
@@ -397,6 +399,7 @@ function loginAs(name) {
 
 function switchUser() {
   currentUser = '';
+  localStorage.removeItem('edc-current-user');
   document.getElementById('main-screen').classList.remove('active');
   document.getElementById('login-screen').classList.add('active');
   document.getElementById('name-input').value = '';
@@ -465,15 +468,27 @@ function renderSchedule() {
   });
   html += '</div>';
 
-  let filtered = schedule.filter(s => s.day === currentDay);
+  let filtered;
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
+    filtered = schedule.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
+    filtered.sort((a, b) => {
+      if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
+      return sortTime(a.start) - sortTime(b.start);
+    });
+  } else {
+    filtered = schedule.filter(s => s.day === currentDay);
+    filtered.sort((a, b) => sortTime(a.start) - sortTime(b.start));
   }
-  filtered.sort((a, b) => sortTime(a.start) - sortTime(b.start));
 
+  let lastDay = '';
   let lastTime = '';
   filtered.forEach((s, i) => {
+    if (searchQuery && s.day !== lastDay) {
+      html += '<div style="padding:12px 0 4px;font-size:.8rem;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px">' + s.day + '</div>';
+      lastDay = s.day;
+      lastTime = '';
+    }
     const idx = schedule.indexOf(s);
     if (s.start !== lastTime) {
       html += '<div class="time-header">' + s.start + '</div>';
@@ -648,7 +663,7 @@ function renderGroup() {
     const cid = 'conflict-' + conflictId++;
     html += '<div class="set-item' + (hasConflict ? ' conflict-row' : '') + '" style="cursor:' + (hasConflict ? 'pointer' : 'default') + '"' + (hasConflict ? ' onclick="toggleConflict(\'' + cid + '\')"' : '') + '>';
     if (hasConflict) html += '<span class="conflict-badge">⚡</span>';
-    html += '<span class="time">' + s.start + '</span>';
+    html += '<span class="time">' + s.start + ' - ' + s.end + '</span>';
     html += '<span style="border-left:2px solid ' + color + ';padding-left:6px">' + s.dj + '</span>';
     html += '<span style="color:var(--text2);font-size:.7rem;margin-left:auto;padding-right:8px">' + s.stage + '</span>';
     html += '<span class="pickers">' + users.map(u => {
@@ -730,14 +745,14 @@ function saveGroupAsImage(day) {
   }).then(canvas => {
     document.body.removeChild(wrapper);
     const link = document.createElement('a');
-    link.download = 'EDC-2026-' + day.replace(/\s+/g, '-') + '-Picks.png';
-    link.href = canvas.toDataURL('image/png');
+    link.download = 'EDC-2026-' + day.replace(/\s+/g, '-') + '-Picks.jpg';
+    link.href = canvas.toDataURL('image/jpeg', 0.92);
     if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
       canvas.toBlob(blob => {
         if (blob) {
-          navigator.share({ title: 'EDC 2026 ' + day + ' Picks', files: [new File([blob], link.download, { type: 'image/png' })] }).catch(() => link.click());
+          navigator.share({ title: 'EDC 2026 ' + day + ' Picks', files: [new File([blob], link.download, { type: 'image/jpeg' })] }).catch(() => link.click());
         } else { link.click(); }
-      });
+      }, 'image/jpeg', 0.92);
     } else { link.click(); }
     showToast('Image saved!');
   }).catch(err => {
@@ -960,12 +975,96 @@ document.getElementById('name-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') login();
 });
 
+async function loadGroupName(id) {
+  const stored = localStorage.getItem('edc-group-names');
+  let names = {};
+  if (stored) { try { names = JSON.parse(stored); } catch(e) {} }
+  let name = names[id] || 'Group';
+  // Try to fetch latest from cloud for OG preview
+  try {
+    const res = await fetch('/api/data?meta=true');
+    if (res.ok) {
+      const meta = await res.json();
+      if (meta[id] && meta[id].name) {
+        name = meta[id].name;
+        names[id] = name;
+        localStorage.setItem('edc-group-names', JSON.stringify(names));
+      }
+    }
+  } catch(e) {}
+  const display = document.getElementById('group-name-display');
+  if (display) display.textContent = name;
+  document.title = name + ' — EDC 2026 Set Planner';
+}
+
+function newGroup() {
+  const name = prompt('Enter a name for this group:');
+  if (!name) return;
+  const id = Math.random().toString(36).slice(2, 10);
+  const stored = localStorage.getItem('edc-group-names');
+  const names = stored ? JSON.parse(stored) : {};
+  names[id] = name;
+  localStorage.setItem('edc-group-names', JSON.stringify(names));
+  // Save group name to cloud
+  const payload = {};
+  payload[id] = { name, createdAt: new Date().toISOString() };
+  fetch('/api/data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groups: payload })
+  }).catch(() => {});
+  window.location.href = '?group=' + id;
+}
+
+function shareGroup() {
+  const shareUrl = window.location.origin + '/g/' + currentGroup;
+  const stored = localStorage.getItem('edc-group-names');
+  let groupName = 'EDC 2026';
+  if (stored) {
+    try {
+      const names = JSON.parse(stored);
+      if (names[currentGroup]) groupName = names[currentGroup];
+    } catch(e) {}
+  }
+  const title = groupName + ' — EDC 2026 Set Planner';
+  if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+    navigator.share({ title, url: shareUrl }).catch(() => {
+      copyToClipboard(shareUrl);
+    });
+  } else {
+    copyToClipboard(shareUrl);
+  }
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => showToast('Link copied!')).catch(() => {});
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Link copied!');
+  }
+}
+
 (async function init() {
+  // Parse group from URL
+  const params = new URLSearchParams(window.location.search);
+  currentGroup = params.get('group') || 'default';
   await loadSchedule();
   loadUsers();
   loadMustSee();
   await syncFromCloud();
   renderLoginUsers();
+  loadGroupName(currentGroup);
+  // Auto-login if saved user exists in this group
+  const savedUser = localStorage.getItem('edc-current-user');
+  if (savedUser && allUsers[savedUser]) {
+    loginAs(savedUser);
+  }
 })();
 </script>
 </body>
