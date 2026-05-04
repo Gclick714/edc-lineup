@@ -955,7 +955,7 @@ function renderLoginUsers() {
 
 function renderAdmin() {
   const container = document.getElementById('admin-tab');
-  const users = Object.keys(allUsers).filter(u => u !== 'Vince');
+  const users = Object.keys(allUsers);
   if (users.length === 0) {
     container.innerHTML = '<div class="empty"><div class="icon">👤</div><p>No other users yet.</p></div>';
     return;
