@@ -295,6 +295,7 @@ function setSyncStatus(msg) {
 async function syncToCloud() {
   // Don't push data to cloud if we haven't verified we have the latest cloud data
   if (!cloudSynced) {
+    console.log('[syncToCloud] BAILED: cloudSynced is false, setting "waiting for sync..."');
     setSyncStatus('waiting for sync...');
     return;
   }
@@ -380,8 +381,10 @@ let cloudSynced = false; // guard: true only after a successful cloud fetch
 
 async function syncFromCloud() {
   try {
+    console.log('[syncFromCloud] fetching for group:', currentGroup);
     const res = await fetch('/api/data?group=' + encodeURIComponent(currentGroup));
-    if (!res.ok) return;
+    console.log('[syncFromCloud] response status:', res.status, 'ok:', res.ok);
+    if (!res.ok) { console.log('[syncFromCloud] BAILED: !res.ok, cloudSynced stays false'); return; }
     const data = await res.json();
 
     // Build a set of cloud users that are tombstoned (deleted by admin via null)
@@ -469,8 +472,10 @@ async function syncFromCloud() {
     }
 
     cloudSynced = true; // mark successful cloud fetch
+    console.log('[syncFromCloud] SUCCESS: cloudSynced set to true');
   } catch (e) {
     // If we haven't ever synced from cloud, don't allow pushing stale data up
+    console.log('[syncFromCloud] CATCH ERROR:', e.message, '- cloudSynced stays', cloudSynced);
     cloudSynced = false;
   }
 }
