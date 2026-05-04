@@ -226,17 +226,54 @@ function gk(suffix) {
 async function loadSchedule() {
   const res = await fetch('schedule.json');
   const base = await res.json();
-  const saved = localStorage.getItem('edc-schedule');
-  if (saved) {
-    schedule = JSON.parse(saved);
-  } else {
-    schedule = base;
+  // Always start from the canonical schedule.json — this ensures array indices
+  // stay consistent across devices. Local edits are stored as an overlay map
+  // keyed by index, NOT as a full array replacement.
+  schedule = base.map((s, i) => ({ ...s, _id: i }));
+  const edits = localStorage.getItem('edc-schedule-edits');
+  if (edits) {
+    try {
+      const overlay = JSON.parse(edits);
+      for (const idxStr in overlay) {
+        const idx = parseInt(idxStr);
+        if (idx >= 0 && idx < schedule.length) {
+          schedule[idx] = { ...schedule[idx], ...overlay[idxStr], _id: idx };
+        }
+      }
+    } catch(e) {}
   }
-  localStorage.setItem('edc-schedule-base', JSON.stringify(base));
+  // Also apply any additions stored separately
+  const additions = localStorage.getItem('edc-schedule-additions');
+  if (additions) {
+    try {
+      const extra = JSON.parse(additions);
+      extra.forEach(s => schedule.push({ ...s, _id: schedule.length }));
+    } catch(e) {}
+  }
 }
 
 function saveSchedule() {
-  localStorage.setItem('edc-schedule', JSON.stringify(schedule));
+  // Instead of replacing the entire array, save only the edits (modified entries)
+  // This preserves the base schedule indices so all devices stay in sync
+  const edits = {};
+  const base = JSON.parse(localStorage.getItem('edc-schedule-base') || '[]');
+  const maxBaseLen = base.length;
+  schedule.forEach((s, i) => {
+    if (i < maxBaseLen) {
+      const orig = base[i];
+      if (s.dj !== orig.dj || s.stage !== orig.stage || s.day !== orig.day || s.start !== orig.start || s.end !== orig.end) {
+        edits[i] = { dj: s.dj, stage: s.stage, day: s.day, start: s.start, end: s.end };
+      }
+    }
+  });
+  localStorage.setItem('edc-schedule-edits', JSON.stringify(edits));
+  // Save any entries beyond the original base length as additions
+  if (schedule.length > maxBaseLen) {
+    const additions = schedule.slice(maxBaseLen).map(s => ({ dj: s.dj, stage: s.stage, day: s.day, start: s.start, end: s.end }));
+    localStorage.setItem('edc-schedule-additions', JSON.stringify(additions));
+  } else {
+    localStorage.removeItem('edc-schedule-additions');
+  }
   scheduleSync();
 }
 
@@ -251,6 +288,11 @@ function setSyncStatus(msg) {
 }
 
 async function syncToCloud() {
+  // Don't push data to cloud if we haven't verified we have the latest cloud data
+  if (!cloudSynced) {
+    setSyncStatus('waiting for sync...');
+    return;
+  }
   setSyncStatus('syncing...');
   try {
     const payload = { group: currentGroup, users: {}, mustSee: {} };
@@ -284,38 +326,53 @@ async function manualSync() {
   renderSchedule();
 }
 
+let cloudSynced = false; // guard: true only after a successful cloud fetch
+
 async function syncFromCloud() {
   try {
     const res = await fetch('/api/data?group=' + encodeURIComponent(currentGroup));
     if (!res.ok) return;
     const data = await res.json();
 
+    // Cloud data is authoritative — overwrite localStorage with whatever cloud has
+    const newUsers = {};
     if (data.users && Object.keys(data.users).length > 0) {
-      const newUsers = {};
       for (const user in data.users) {
         const userPicks = data.users[user];
         newUsers[user] = Array.isArray(userPicks) ? [...userPicks] : [];
       }
       allUsers = newUsers;
-      localStorage.setItem(gk('edc-users'), JSON.stringify(allUsers));
+    } else {
+      // Cloud has no users for this group — clear local data
+      allUsers = {};
     }
+    localStorage.setItem(gk('edc-users'), JSON.stringify(allUsers));
 
+    const newMustSee = {};
     if (data.mustSee && Object.keys(data.mustSee).length > 0) {
-      const newMustSee = {};
       for (const user in data.mustSee) {
         const userMust = data.mustSee[user];
         newMustSee[user] = Array.isArray(userMust) ? [...userMust] : [];
       }
       mustSee = newMustSee;
-      localStorage.setItem(gk('edc-must-see'), JSON.stringify(mustSee));
+    } else {
+      mustSee = {};
     }
-  } catch (e) {}
+    localStorage.setItem(gk('edc-must-see'), JSON.stringify(mustSee));
+
+    cloudSynced = true; // mark successful cloud fetch
+  } catch (e) {
+    // If we haven't ever synced from cloud, don't allow pushing stale data up
+    cloudSynced = false;
+  }
 }
 
 function loadUsers() {
+  // Load from localStorage as fallback, but cloud data (from syncFromCloud)
+  // will overwrite this after the async fetch completes
   const data = localStorage.getItem(gk('edc-users'));
   if (data) {
-    allUsers = JSON.parse(data);
+    try { allUsers = JSON.parse(data); } catch(e) { allUsers = {}; }
   }
 }
 
@@ -325,6 +382,7 @@ function saveUsers() {
 }
 
 function loadMustSee() {
+  // Fallback only — cloud overwrites this after syncFromCloud
   const data = localStorage.getItem(gk('edc-must-see'));
   if (data) {
     try { mustSee = JSON.parse(data); } catch(e) { mustSee = {}; }
@@ -479,13 +537,13 @@ function renderSchedule() {
   let filtered;
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
-    filtered = schedule.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
+    filtered = schedule.filter(s => !s._deleted && (s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q)));
     filtered.sort((a, b) => {
       if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
       return sortTime(a.start) - sortTime(b.start);
     });
   } else {
-    filtered = schedule.filter(s => s.day === currentDay);
+    filtered = schedule.filter(s => !s._deleted && s.day === currentDay);
     filtered.sort((a, b) => sortTime(a.start) - sortTime(b.start));
   }
 
@@ -528,7 +586,7 @@ function renderMyPicks() {
     container.innerHTML = '<div class="empty"><div class="icon">🎵</div><p>No picks yet! Heart some DJs from the Schedule tab.</p></div>';
     return;
   }
-  let items = picks.map(i => schedule[i]).filter(Boolean);
+  let items = picks.map(i => schedule[i]).filter(Boolean).filter(s => !s._deleted);
   items.sort((a, b) => {
     if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
     return sortTime(a.start) - sortTime(b.start);
@@ -634,7 +692,7 @@ function renderGroup() {
     });
   });
 
-  let allItems = Object.entries(pickMap).map(([idx, users]) => ({ idx: parseInt(idx), s: schedule[parseInt(idx)], users })).filter(x => x.s);
+  let allItems = Object.entries(pickMap).map(([idx, users]) => ({ idx: parseInt(idx), s: schedule[parseInt(idx)], users })).filter(x => x.s && !x.s._deleted);
   allItems.sort((a, b) => {
     if (a.s.day !== b.s.day) return ['Friday','Saturday','Sunday'].indexOf(a.s.day) - ['Friday','Saturday','Sunday'].indexOf(b.s.day);
     return sortTime(a.s.start) - sortTime(b.s.start);
@@ -718,7 +776,7 @@ function saveGroupAsImage(day) {
     });
   });
 
-  let allItems = Object.entries(pickMap).map(([idx, users]) => ({ idx: parseInt(idx), s: schedule[parseInt(idx)], users })).filter(x => x.s && x.s.day === day);
+  let allItems = Object.entries(pickMap).map(([idx, users]) => ({ idx: parseInt(idx), s: schedule[parseInt(idx)], users })).filter(x => x.s && x.s.day === day && !x.s._deleted);
   allItems.sort((a, b) => sortTime(a.s.start) - sortTime(b.s.start));
 
   if (allItems.length === 0) {
@@ -796,7 +854,7 @@ function findCollisions(users) {
   const collisions = [];
   const userSets = {};
   users.forEach(u => {
-    userSets[u] = (allUsers[u] || []).map(i => schedule[i]).filter(Boolean);
+    userSets[u] = (allUsers[u] || []).map(i => schedule[i]).filter(Boolean).filter(s => !s._deleted);
   });
 
   for (let i = 0; i < users.length; i++) {
@@ -866,7 +924,7 @@ function renderEdit() {
 
   if (editSearch.length > 0) {
     const q = editSearch.toLowerCase();
-    const results = schedule.filter(s => s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q));
+    const results = schedule.filter(s => !s._deleted && (s.dj.toLowerCase().includes(q) || s.stage.toLowerCase().includes(q)));
     results.sort((a, b) => {
       if (a.day !== b.day) return ['Friday','Saturday','Sunday'].indexOf(a.day) - ['Friday','Saturday','Sunday'].indexOf(b.day);
       return sortTime(a.start) - sortTime(b.start);
@@ -913,7 +971,8 @@ function saveEdit() {
   const start = document.getElementById('edit-start').value.trim();
   const end = document.getElementById('edit-end').value.trim();
   if (!dj || !stage || !start || !end) { showToast('All fields required'); return; }
-  schedule[editingIdx] = { dj, stage, day, start, end };
+  // Preserve _id so array index remains stable across devices
+  schedule[editingIdx] = { dj, stage, day, start, end, _id: schedule[editingIdx]._id || editingIdx };
   saveSchedule();
   showToast('Saved!');
   editingIdx = null;
@@ -923,9 +982,11 @@ function saveEdit() {
 
 function deleteEntry() {
   if (editingIdx === null) return;
-  schedule.splice(editingIdx, 1);
+  // Instead of splicing (which shifts all indices), mark as deleted by zeroing out
+  schedule[editingIdx] = { dj: '[deleted]', stage: '', day: schedule[editingIdx].day, start: '', end: '', _deleted: true };
+  // Remove this index from all users' picks
   Object.keys(allUsers).forEach(u => {
-    allUsers[u] = allUsers[u].filter(i => i !== editingIdx).map(i => i > editingIdx ? i - 1 : i);
+    allUsers[u] = allUsers[u].filter(i => i !== editingIdx);
   });
   saveSchedule();
   saveUsers();
@@ -935,7 +996,7 @@ function deleteEntry() {
 }
 
 function addNewEntry() {
-  schedule.push({ dj: 'New DJ', stage: 'Stage', day: 'Friday', start: '7:00 PM', end: '8:00 PM' });
+  schedule.push({ dj: 'New DJ', stage: 'Stage', day: 'Friday', start: '7:00 PM', end: '8:00 PM', _id: schedule.length });
   saveSchedule();
   editingIdx = schedule.length - 1;
   renderEdit();
@@ -1064,6 +1125,15 @@ function copyToClipboard(text) {
 }
 
 (async function init() {
+  // One-time migration: remove old monolithic edc-schedule (was causing index corruption)
+  try {
+    const oldSchedule = localStorage.getItem('edc-schedule');
+    if (oldSchedule) {
+      localStorage.removeItem('edc-schedule');
+      console.log('Migrated away from old edc-schedule format');
+    }
+  } catch(e) {}
+
   // Parse group from URL
   const params = new URLSearchParams(window.location.search);
   currentGroup = params.get('group') || 'default';

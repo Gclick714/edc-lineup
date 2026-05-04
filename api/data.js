@@ -108,6 +108,114 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      // Admin operations (password-protected dashboard)
+      if (data.admin === true) {
+        if (data.password !== 'asia123') {
+          return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        if (data.action === 'list') {
+          const { blobs } = await list({ prefix: '' });
+          const results = [];
+          for (const blob of blobs) {
+            try {
+              const resp = await fetch(blob.url);
+              const content = await resp.json();
+              results.push({ pathname: blob.pathname, url: blob.url, uploadedAt: blob.uploadedAt, content });
+            } catch (e) {
+              results.push({ pathname: blob.pathname, url: blob.url, error: e.message });
+            }
+          }
+          return res.status(200).json({ ok: true, blobs: results });
+        }
+
+        if (data.action === 'deleteUser') {
+          const key = userKey(data.group);
+          const { blobs } = await list({ prefix: key });
+          if (blobs.length > 0) {
+            const resp = await fetch(blobs[0].url);
+            const existing = await resp.json();
+            if (existing.users) delete existing.users[data.user];
+            if (existing.mustSee) delete existing.mustSee[data.user];
+            await put(key, JSON.stringify(existing), { access: 'public', allowOverwrite: true });
+            return res.status(200).json({ ok: true, message: 'Removed ' + data.user + ' from ' + data.group });
+          }
+          return res.status(404).json({ error: 'Group data not found' });
+        }
+
+        if (data.action === 'clearUser') {
+          const key = userKey(data.group);
+          const { blobs } = await list({ prefix: key });
+          if (blobs.length > 0) {
+            const resp = await fetch(blobs[0].url);
+            const existing = await resp.json();
+            if (existing.users) existing.users[data.user] = [];
+            if (existing.mustSee) existing.mustSee[data.user] = [];
+            await put(key, JSON.stringify(existing), { access: 'public', allowOverwrite: true });
+            return res.status(200).json({ ok: true, message: 'Cleared picks for ' + data.user });
+          }
+          return res.status(404).json({ error: 'Group data not found' });
+        }
+
+        if (data.action === 'clearGroup') {
+          const key = userKey(data.group);
+          const { blobs } = await list({ prefix: key });
+          if (blobs.length > 0) {
+            const existing = { users: {}, mustSee: {} };
+            const resp = await fetch(blobs[0].url);
+            const current = await resp.json();
+            if (current.users) {
+              for (const u in current.users) {
+                existing.users[u] = [];
+              }
+            }
+            await put(key, JSON.stringify(existing), { access: 'public', allowOverwrite: true });
+            return res.status(200).json({ ok: true, message: 'Cleared all picks for group' });
+          }
+          return res.status(404).json({ error: 'Group data not found' });
+        }
+
+        if (data.action === 'deleteGroup') {
+          const key = userKey(data.group);
+          const { blobs } = await list({ prefix: key });
+          if (blobs.length > 0) {
+            await del(blobs[0].url);
+          }
+          // Remove from metadata
+          const { blobs: metaBlobs } = await list({ prefix: GROUPS_META_KEY });
+          if (metaBlobs.length > 0) {
+            try {
+              const resp = await fetch(metaBlobs[0].url);
+              const meta = await resp.json();
+              if (meta[data.group]) {
+                delete meta[data.group];
+                await put(GROUPS_META_KEY, JSON.stringify(meta), { access: 'public', allowOverwrite: true });
+              }
+            } catch (e) { /* ignore meta errors */ }
+          }
+          return res.status(200).json({ ok: true, message: 'Group ' + data.group + ' deleted' });
+        }
+
+        if (data.action === 'deleteLegacy') {
+          const { blobs } = await list({ prefix: LEGACY_KEY });
+          if (blobs.length > 0) {
+            await del(blobs[0].url);
+            return res.status(200).json({ ok: true, message: 'Legacy data deleted' });
+          }
+          return res.status(404).json({ error: 'No legacy data found' });
+        }
+
+        if (data.action === 'deleteBlob') {
+          if (data.url) {
+            await del(data.url);
+            return res.status(200).json({ ok: true, message: 'Blob deleted' });
+          }
+          return res.status(400).json({ error: 'No URL provided' });
+        }
+
+        return res.status(400).json({ error: 'Unknown admin action' });
+      }
+
       return res.status(400).json({ error: 'No recognizable data' });
     } catch (e) {
       return res.status(500).json({ error: e.message });

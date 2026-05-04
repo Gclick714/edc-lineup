@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — EDC Planner</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0f;color:#e8e8f0;min-height:100vh;padding:20px}
+.app{max-width:900px;margin:0 auto}
+h1{font-size:1.5rem;background:linear-gradient(135deg,#e040fb,#7c4dff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;font-weight:800;margin-bottom:20px}
+h2{font-size:1.1rem;color:#e040fb;margin:20px 0 10px}
+.card{background:#13131f;border-radius:10px;padding:16px;margin-bottom:12px}
+.card h3{font-size:.9rem;color:#8888aa;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #2a2a3e}
+th{color:#8888aa;font-size:.8rem;font-weight:600}
+td{color:#e8e8f0}
+.user-list{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0}
+.user-tag{background:#1a1a2e;padding:4px 10px;border-radius:6px;font-size:.8rem;color:#e040fb;display:flex;align-items:center;gap:4px}
+.user-tag .count{color:#8888aa;font-size:.7rem}
+.user-tag .del-btn{background:none;border:none;color:#ff4081;cursor:pointer;font-size:.9rem;padding:0 0 0 4px}
+.user-tag .del-btn:hover{color:#ff6b9d}
+.user-tag .clear-btn{background:none;border:none;color:#69f0ae;cursor:pointer;font-size:.75rem;padding:0 0 0 4px}
+.action-btn{padding:8px 16px;border:none;border-radius:8px;font-size:.8rem;font-weight:600;cursor:pointer;transition:all .15s}
+.action-btn.danger{background:rgba(255,64,129,.15);color:#ff4081}
+.action-btn.danger:hover{background:rgba(255,64,129,.3)}
+.action-btn.success{background:rgba(105,240,174,.15);color:#69f0ae}
+.action-btn.success:hover{background:rgba(105,240,174,.3)}
+.action-btn.warning{background:rgba(255,171,64,.15);color:#ffab40}
+.action-btn.warning:hover{background:rgba(255,171,64,.3)}
+.action-btn:disabled{opacity:.4;cursor:not-allowed}
+.status{font-size:.8rem;color:#69f0ae;margin:10px 0;padding:8px;background:rgba(105,240,174,.08);border-radius:6px;display:none}
+.status.error{color:#ff4081;background:rgba(255,64,129,.08)}
+.login{text-align:center;margin-top:60px}
+.login input{width:100%;max-width:280px;padding:14px 20px;border:2px solid #2a2a3e;border-radius:12px;background:#13131f;color:#e8e8f0;font-size:1.1rem;outline:none;text-align:center}
+.login input:focus{border-color:#e040fb}
+.login button{display:block;margin:16px auto 0;padding:14px 48px;border:none;border-radius:12px;background:linear-gradient(135deg,#e040fb,#7c4dff);color:#fff;font-size:1.1rem;font-weight:700;cursor:pointer}
+.login button:hover{transform:scale(1.03)}
+.loading{text-align:center;padding:40px;color:#8888aa}
+.error{color:#ff4081;padding:20px;text-align:center}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.btn-row button{padding:8px 16px;border:1px solid #2a2a3e;border-radius:8px;background:transparent;color:#8888aa;font-size:.8rem;cursor:pointer}
+.btn-row button:hover{border-color:#e040fb;color:#e040fb}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <h1>⚙️ Admin Dashboard</h1>
+
+  <div id="login-screen">
+    <div class="login">
+      <input type="password" id="password-input" placeholder="Enter admin password" autofocus>
+      <button onclick="adminLogin()">Unlock</button>
+    </div>
+  </div>
+
+  <div id="dashboard" style="display:none">
+    <div class="btn-row">
+      <button onclick="loadData()">🔄 Refresh</button>
+      <button onclick="deleteAllUserPicks()" style="color:#ffab40;border-color:#ffab40">🗑️ Clear All Picks (Keep Users)</button>
+      <button onclick="if(confirm('This will DELETE ALL blob data permanently. Continue?')){deleteAllBlobs()}">🔥 Delete ALL Data</button>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div id="groups-container">
+      <div class="loading" id="loading">Loading groups...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '/api/data';
+
+async function adminLogin() {
+  const pw = document.getElementById('password-input').value.trim();
+  if (pw !== 'asia123') {
+    showStatus('Wrong password', true);
+    return;
+  }
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  loadData();
+}
+
+function showStatus(msg, isError) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.style.display = 'block';
+  el.className = 'status' + (isError ? ' error' : '');
+  setTimeout(() => { if (el.textContent === msg) el.style.display = 'none'; }, 4000);
+}
+
+async function apiCall(body) {
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admin: true, password: 'asia123', ...body })
+  });
+  return await res.json();
+}
+
+async function loadData() {
+  const container = document.getElementById('groups-container');
+  container.innerHTML = '<div class="loading">Loading groups...</div>';
+
+  try {
+    const result = await apiCall({ action: 'list' });
+    if (!result.ok) {
+      container.innerHTML = '<div class="error">Failed to load data: ' + (result.error || 'unknown') + '</div>';
+      return;
+    }
+
+    const blobs = result.blobs || [];
+    let html = '';
+
+    // Group data files (edc-users-*.json)
+    const groupBlobs = blobs.filter(b => b.pathname.startsWith('edc-users-') && b.pathname.endsWith('.json'));
+    // Meta data
+    const metaBlobs = blobs.filter(b => b.pathname === 'edc-groups-meta.json');
+    let groupNames = {};
+    if (metaBlobs.length > 0 && metaBlobs[0].content) {
+      groupNames = metaBlobs[0].content;
+    }
+
+    // Legacy
+    const legacyBlobs = blobs.filter(b => b.pathname === 'edc-data.json');
+
+    html += '<h2>📁 Groups (' + groupBlobs.length + ')</h2>';
+
+    if (groupBlobs.length === 0) {
+      html += '<div class="card"><p style="color:#8888aa">No group data found in blob storage.</p></div>';
+    } else {
+      groupBlobs.forEach(b => {
+        const match = b.pathname.match(/edc-users-(.+)\.json$/);
+        const groupId = match ? match[1] : b.pathname;
+        const content = b.content || {};
+        const users = content.users || {};
+        const mustSee = content.mustSee || {};
+        const userNameList = Object.keys(users);
+
+        html += '<div class="card" id="group-' + groupId.replace(/[^a-z0-9]/g, '') + '">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">';
+        html += '<h3 style="margin:0">' + (groupNames[groupId] ? groupNames[groupId].name + ' (' + groupId + ')' : groupId) + '</h3>';
+        html += '<div style="display:flex;gap:6px">';
+        html += '<button class="action-btn warning" onclick="clearGroupPicks(\'' + groupId + '\')">Clear Picks</button>';
+        html += '<button class="action-btn danger" onclick="deleteGroup(\'' + groupId + '\')" style="">Delete Group</button>';
+        html += '</div></div>';
+
+        html += '<div><span style="color:#8888aa;font-size:.75rem">File: ' + b.pathname + '</span></div>';
+
+        if (userNameList.length === 0) {
+          html += '<div style="color:#8888aa;font-size:.8rem;margin-top:8px">No users in this group.</div>';
+        } else {
+          html += '<div class="user-list">';
+          userNameList.sort().forEach(u => {
+            const picks = users[u] || [];
+            const must = (mustSee[u] || []);
+            html += '<span class="user-tag">';
+            html += u;
+            html += ' <span class="count">' + picks.length + ' picks, ' + (must.length > 0 ? '⭐' + must.length : '0 star') + '</span>';
+            html += ' <button class="clear-btn" onclick="clearUserPicks(\'' + groupId + '\',\'' + u.replace(/'/g, "\\'") + '\')" title="Clear picks">✕</button>';
+            html += ' <button class="del-btn" onclick="deleteUser(\'' + groupId + '\',\'' + u.replace(/'/g, "\\'") + '\',this)" title="Delete user">✕</button>';
+            html += '</span>';
+          });
+          html += '</div>';
+          html += '<div style="margin-top:8px;font-size:.75rem;color:#8888aa">';
+          html += 'Total: ' + userNameList.length + ' users, ' + userNameList.reduce((s, u) => s + (users[u] || []).length, 0) + ' picks';
+          html += '</div>';
+        }
+        html += '</div>';
+      });
+    }
+
+    // Legacy section
+    html += '<h2>🗄️ Legacy Data</h2>';
+    if (legacyBlobs.length > 0) {
+      html += '<div class="card">';
+      html += '<p style="margin-bottom:8px">Old <code>edc-data.json</code> blob found (likely contains corrupted index-based picks).</p>';
+      html += '<button class="action-btn danger" onclick="deleteLegacy()">Delete Legacy Data</button>';
+      html += '</div>';
+    } else {
+      html += '<div class="card"><p style="color:#8888aa">No legacy blob found. Clean!</p></div>';
+    }
+
+    // Other blobs
+    const otherBlobs = blobs.filter(b =>
+      !b.pathname.startsWith('edc-users-') &&
+      b.pathname !== 'edc-groups-meta.json' &&
+      b.pathname !== 'edc-data.json'
+    );
+    if (otherBlobs.length > 0) {
+      html += '<h2>📄 Other Blobs (' + otherBlobs.length + ')</h2>';
+      html += '<div class="card">';
+      otherBlobs.forEach(b => {
+        html += '<div style="padding:4px 0;font-size:.8rem;border-bottom:1px solid #2a2a3e">';
+        html += '<span style="color:#8888aa">' + b.pathname + '</span>';
+        html += ' <button class="action-btn danger" style="padding:4px 10px;font-size:.7rem" onclick="deleteBlob(\'' + b.url + '\')">Delete</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div class="error">Error: ' + e.message + '</div>';
+  }
+}
+
+async function deleteUser(groupId, userName, btn) {
+  if (!confirm('Delete user "' + userName + '" from group "' + groupId + '"? This removes their profile and all picks.')) return;
+  const result = await apiCall({ action: 'deleteUser', group: groupId, user: userName });
+  if (result.ok) {
+    showStatus(result.message);
+    loadData();
+  } else {
+    showStatus('Error: ' + (result.error || 'unknown'), true);
+  }
+}
+
+async function clearUserPicks(groupId, userName) {
+  if (!confirm('Clear all picks for "' + userName + '" in group "' + groupId + '"? They keep their profile but picks reset.')) return;
+  const result = await apiCall({ action: 'clearUser', group: groupId, user: userName });
+  if (result.ok) {
+    showStatus(result.message);
+    loadData();
+  } else {
+    showStatus('Error: ' + (result.error || 'unknown'), true);
+  }
+}
+
+async function clearGroupPicks(groupId) {
+  if (!confirm('Clear ALL picks for everyone in group "' + groupId + '"?')) return;
+  const result = await apiCall({ action: 'clearGroup', group: groupId });
+  if (result.ok) {
+    showStatus(result.message);
+    loadData();
+  } else {
+    showStatus('Error: ' + (result.error || 'unknown'), true);
+  }
+}
+
+async function deleteGroup(groupId) {
+  if (!confirm('DELETE entire group "' + groupId + '" and all its data? This cannot be undone!')) return;
+  const result = await apiCall({ action: 'deleteGroup', group: groupId });
+  if (result.ok) {
+    showStatus(result.message);
+    loadData();
+  } else {
+    showStatus('Error: ' + (result.error || 'unknown'), true);
+  }
+}
+
+async function deleteLegacy() {
+  if (!confirm('Delete the legacy edc-data.json blob?')) return;
+  const result = await apiCall({ action: 'deleteLegacy' });
+  if (result.ok) {
+    showStatus(result.message);
+    loadData();
+  } else {
+    showStatus('Error: ' + (result.error || 'unknown'), true);
+  }
+}
+
+async function deleteAllUserPicks() {
+  if (!confirm('Clear ALL picks for ALL users in ALL groups? Users keep their profiles but picks reset to empty.')) return;
+  const result = await apiCall({ action: 'list' });
+  if (!result.ok) { showStatus('Error listing data', true); return; }
+  const blobs = result.blobs || [];
+  const groupBlobs = blobs.filter(b => b.pathname.startsWith('edc-users-') && b.pathname.endsWith('.json'));
+  let count = 0;
+  for (const b of groupBlobs) {
+    const match = b.pathname.match(/edc-users-(.+)\.json$/);
+    if (!match) continue;
+    const groupId = match[1];
+    const r = await apiCall({ action: 'clearGroup', group: groupId });
+    if (r.ok) count++;
+  }
+  showStatus('Cleared picks in ' + count + ' groups');
+  loadData();
+}
+
+async function deleteAllBlobs() {
+  const result = await apiCall({ action: 'list' });
+  if (!result.ok) { showStatus('Error listing data', true); return; }
+  const blobs = result.blobs || [];
+  for (const b of blobs) {
+    try {
+      await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin: true, password: 'asia123', action: 'deleteBlob', url: b.url })
+      });
+    } catch(e) {}
+  }
+  showStatus('All blobs deleted. ' + blobs.length + ' removed.');
+  loadData();
+}
+
+async function deleteBlob(url) {
+  const result = await apiCall({ action: 'deleteBlob', url });
+  if (result.ok) {
+    showStatus('Deleted blob');
+    loadData();
+  }
+}
+
+// Keyboard support
+document.getElementById('password-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') adminLogin();
+});
+</script>
+</body>
+</html>
