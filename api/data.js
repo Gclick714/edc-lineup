@@ -1,7 +1,8 @@
-import { put, list } from '@vercel/blob';
+import { put, list, del } from '@vercel/blob';
 
 const SCHEDULE_KEY = 'edc-schedule.json';
 const GROUPS_META_KEY = 'edc-groups-meta.json';
+const LEGACY_KEY = 'edc-data.json';
 
 function userKey(group) {
   return 'edc-users-' + (group || 'default') + '.json';
@@ -44,6 +45,24 @@ export default async function handler(req, res) {
         const data = await resp.json();
         return res.status(200).json(data);
       }
+
+      // Auto-migrate legacy edc-data.json blob to new group-scoped key
+      if (!group || group === 'default') {
+        const { blobs: legacyBlobs } = await list({ prefix: LEGACY_KEY });
+        if (legacyBlobs.length > 0) {
+          const resp = await fetch(legacyBlobs[0].url);
+          const legacy = await resp.json();
+          const migrated = {};
+          if (legacy.users) migrated.users = legacy.users;
+          if (legacy.mustSee) migrated.mustSee = legacy.mustSee;
+          if (Object.keys(migrated).length > 0) {
+            await put(key, JSON.stringify(migrated), { access: 'public', allowOverwrite: true });
+            try { await del(legacyBlobs[0].url); } catch(e) { /* ignore if already deleted */ }
+            return res.status(200).json(migrated);
+          }
+        }
+      }
+
       return res.status(200).json({ users: {}, mustSee: {} });
     } catch (e) {
       return res.status(500).json({ error: e.message });
