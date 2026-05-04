@@ -263,13 +263,18 @@ function saveSchedule() {
       const orig = base[i];
       if (s.dj !== orig.dj || s.stage !== orig.stage || s.day !== orig.day || s.start !== orig.start || s.end !== orig.end) {
         edits[i] = { dj: s.dj, stage: s.stage, day: s.day, start: s.start, end: s.end };
+        if (s._deleted) edits[i]._deleted = true;
       }
     }
   });
   localStorage.setItem('edc-schedule-edits', JSON.stringify(edits));
   // Save any entries beyond the original base length as additions
   if (schedule.length > maxBaseLen) {
-    const additions = schedule.slice(maxBaseLen).map(s => ({ dj: s.dj, stage: s.stage, day: s.day, start: s.start, end: s.end }));
+    const additions = schedule.slice(maxBaseLen).map(s => {
+      const a = { dj: s.dj, stage: s.stage, day: s.day, start: s.start, end: s.end };
+      if (s._deleted) a._deleted = true;
+      return a;
+    });
     localStorage.setItem('edc-schedule-additions', JSON.stringify(additions));
   } else {
     localStorage.removeItem('edc-schedule-additions');
@@ -339,7 +344,11 @@ async function syncToCloud() {
       }
     }
 
-    const payload = { group: currentGroup, users: mergedUsers, mustSee: mergedMustSee };
+    // Include schedule edits in the sync so all devices share the same lineup
+    const scheduleEdits = JSON.parse(localStorage.getItem('edc-schedule-edits') || '{}');
+    const scheduleAdditions = JSON.parse(localStorage.getItem('edc-schedule-additions') || '[]');
+
+    const payload = { group: currentGroup, users: mergedUsers, mustSee: mergedMustSee, scheduleEdits, scheduleAdditions };
     const res = await fetch('/api/data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -434,6 +443,30 @@ async function syncFromCloud() {
     }
     mustSee = newMustSee;
     localStorage.setItem(gk('edc-must-see'), JSON.stringify(mustSee));
+
+    // Merge cloud schedule edits/additions with local ones.
+    // Cloud wins for conflicting index edits; additions are deduplicated by DJ name.
+    if (data.scheduleEdits || data.scheduleAdditions) {
+      const localEdits = JSON.parse(localStorage.getItem('edc-schedule-edits') || '{}');
+      const localAdditions = JSON.parse(localStorage.getItem('edc-schedule-additions') || '[]');
+      const cloudEdits = data.scheduleEdits || {};
+      const cloudAdditions = data.scheduleAdditions || [];
+
+      // Merge edits: cloud wins for same index
+      const mergedEdits = { ...localEdits, ...cloudEdits };
+      localStorage.setItem('edc-schedule-edits', JSON.stringify(mergedEdits));
+
+      // Merge additions: deduplicate by DJ name, cloud first
+      const names = new Set(cloudAdditions.map(a => a.dj));
+      const mergedAdditions = [...cloudAdditions];
+      localAdditions.forEach(a => {
+        if (!names.has(a.dj)) {
+          mergedAdditions.push(a);
+          names.add(a.dj);
+        }
+      });
+      localStorage.setItem('edc-schedule-additions', JSON.stringify(mergedAdditions));
+    }
 
     cloudSynced = true; // mark successful cloud fetch
   } catch (e) {
@@ -1212,10 +1245,13 @@ function copyToClipboard(text) {
   // Parse group from URL
   const params = new URLSearchParams(window.location.search);
   currentGroup = params.get('group') || 'default';
-  await loadSchedule();
+  // Load users/mustSee first so syncFromCloud can merge properly
   loadUsers();
   loadMustSee();
+  // Fetch cloud data BEFORE loading schedule — writes cloud edits to localStorage
   await syncFromCloud();
+  // Now load schedule (picks up cloud-merged edits from localStorage)
+  await loadSchedule();
   renderLoginUsers();
   loadGroupName(currentGroup);
   // Auto-login if saved user exists in this group

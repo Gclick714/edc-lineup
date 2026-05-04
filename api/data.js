@@ -74,7 +74,7 @@ export default async function handler(req, res) {
       const data = req.body;
       if (!data) return res.status(400).json({ error: 'No body' });
 
-      const { group, users, mustSee, schedule, groups } = data;
+      const { group, users, mustSee, schedule, groups, scheduleEdits, scheduleAdditions } = data;
 
       // Store group metadata (names)
       if (groups && Object.keys(groups).length > 0) {
@@ -98,14 +98,16 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // Store user data (users + mustSee) for a group
-      if (users || mustSee) {
+      // Store user data (users + mustSee + scheduleEdits + scheduleAdditions) for a group
+      if (users || mustSee || scheduleEdits || scheduleAdditions) {
         const key = userKey(group);
 
         // Fetch current cloud state FIRST — admin deletions are authoritative.
         // This prevents stale clients from resurrecting admin-deleted users.
         let existingUsers = {};
         let existingMustSee = {};
+        let existingEdits = {};
+        let existingAdditions = [];
         try {
           const { blobs } = await list({ prefix: key });
           if (blobs.length > 0) {
@@ -113,6 +115,8 @@ export default async function handler(req, res) {
             const current = await resp.json();
             if (current.users) existingUsers = current.users;
             if (current.mustSee) existingMustSee = current.mustSee;
+            if (current.scheduleEdits) existingEdits = current.scheduleEdits;
+            if (current.scheduleAdditions) existingAdditions = current.scheduleAdditions;
           }
         } catch (e) { /* ignore read errors */ }
 
@@ -159,6 +163,23 @@ export default async function handler(req, res) {
             }
           }
           payload.mustSee = mergedMustSee;
+        }
+        // Merge schedule edits: incoming overwrites cloud for same index
+        if (scheduleEdits && Object.keys(scheduleEdits).length > 0) {
+          payload.scheduleEdits = { ...existingEdits, ...scheduleEdits };
+        } else if (Object.keys(existingEdits).length > 0) {
+          payload.scheduleEdits = existingEdits;
+        }
+        // Merge schedule additions: deduplicate by DJ name, incoming first
+        if (scheduleAdditions && scheduleAdditions.length > 0) {
+          const names = new Set(scheduleAdditions.map(a => a.dj));
+          const merged = [...scheduleAdditions];
+          existingAdditions.forEach(a => {
+            if (!names.has(a.dj)) merged.push(a);
+          });
+          payload.scheduleAdditions = merged;
+        } else if (existingAdditions.length > 0) {
+          payload.scheduleAdditions = existingAdditions;
         }
         await put(key, JSON.stringify(payload), { access: 'public', allowOverwrite: true });
         return res.status(200).json({ ok: true });
