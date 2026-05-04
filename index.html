@@ -308,11 +308,12 @@ async function syncToCloud() {
       }
     } catch(e) {}
 
-    // Merge: cloud is authoritative for which users exist (admin deletions)
-    // Local is authoritative for picks (most recent hearts)
+    // Merge: cloud is authoritative for which users exist (admin deletions).
+    // Uses three-state: undefined (new user) → allow, null (tombstone) → block, Array → allow.
     const mergedUsers = {};
-    // First, include all cloud users (users not deleted by admin)
+    // Include all cloud-valid users (not tombstoned by admin)
     for (const u in cloudUsers) {
+      if (cloudUsers[u] === null) continue; // admin-deleted tombstone
       // If local has this user, use local picks (more recent)
       if (allUsers[u]) mergedUsers[u] = allUsers[u].slice();
       else mergedUsers[u] = []; // keep user with empty picks
@@ -324,6 +325,7 @@ async function syncToCloud() {
 
     const mergedMustSee = {};
     for (const u in cloudMustSee) {
+      if (cloudMustSee[u] === null) continue;
       if (mustSee[u]) mergedMustSee[u] = mustSee[u].slice();
       else mergedMustSee[u] = [];
     }
@@ -367,30 +369,64 @@ async function syncFromCloud() {
     if (!res.ok) return;
     const data = await res.json();
 
-    // Cloud data is authoritative — overwrite localStorage with whatever cloud has
+    // Build a set of cloud users that are tombstoned (deleted by admin via null)
+    const cloudTombstoned = new Set();
+    if (data.users) {
+      for (const user in data.users) {
+        if (data.users[user] === null) cloudTombstoned.add(user);
+      }
+    }
+    const mustSeeTombstoned = new Set();
+    if (data.mustSee) {
+      for (const user in data.mustSee) {
+        if (data.mustSee[user] === null) mustSeeTombstoned.add(user);
+      }
+    }
+
+    // Merge cloud users with local users instead of replacing wholesale.
+    // This prevents losing new users created locally that haven't synced yet
+    // (e.g. first-time use of a new group).
     const newUsers = {};
-    if (data.users && Object.keys(data.users).length > 0) {
+    if (data.users) {
       for (const user in data.users) {
         const userPicks = data.users[user];
-        newUsers[user] = Array.isArray(userPicks) ? [...userPicks] : [];
+        if (userPicks === null) continue; // skip admin-deleted tombstone
+        // If local has this user, keep local picks (more recent / not yet synced)
+        if (allUsers[user]) {
+          newUsers[user] = allUsers[user].slice();
+        } else {
+          newUsers[user] = Array.isArray(userPicks) ? [...userPicks] : [];
+        }
       }
-      allUsers = newUsers;
-    } else {
-      // Cloud has no users for this group — clear local data
-      allUsers = {};
     }
+    // Keep local-only users that haven't been tombstoned by admin
+    for (const user in allUsers) {
+      if (!newUsers[user] && !cloudTombstoned.has(user)) {
+        newUsers[user] = allUsers[user].slice();
+      }
+    }
+    allUsers = newUsers;
     localStorage.setItem(gk('edc-users'), JSON.stringify(allUsers));
 
+    // Same merge logic for mustSee
     const newMustSee = {};
-    if (data.mustSee && Object.keys(data.mustSee).length > 0) {
+    if (data.mustSee) {
       for (const user in data.mustSee) {
         const userMust = data.mustSee[user];
-        newMustSee[user] = Array.isArray(userMust) ? [...userMust] : [];
+        if (userMust === null) continue;
+        if (mustSee[user]) {
+          newMustSee[user] = mustSee[user].slice();
+        } else {
+          newMustSee[user] = Array.isArray(userMust) ? [...userMust] : [];
+        }
       }
-      mustSee = newMustSee;
-    } else {
-      mustSee = {};
     }
+    for (const user in mustSee) {
+      if (!newMustSee[user] && !mustSeeTombstoned.has(user)) {
+        newMustSee[user] = mustSee[user].slice();
+      }
+    }
+    mustSee = newMustSee;
     localStorage.setItem(gk('edc-must-see'), JSON.stringify(mustSee));
 
     cloudSynced = true; // mark successful cloud fetch

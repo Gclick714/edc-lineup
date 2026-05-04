@@ -116,20 +116,26 @@ export default async function handler(req, res) {
           }
         } catch (e) { /* ignore read errors */ }
 
-        // Merge: cloud is authoritative for WHICH users exist (admin deletions).
-        // Incoming request wins for picks of users that exist in cloud.
+        // Merge: three-state authority model for users.
+        //   undefined (key absent) → brand new user, ALLOW
+        //   null (tombstone)      → admin-deleted, BLOCK
+        //   Array[]               → existing user, ALLOW incoming picks
+        // Cloud is authoritative for WHICH users exist.
         const payload = {};
         if (users && Object.keys(users).length > 0) {
           const mergedUsers = {};
-          // Users that exist in BOTH cloud AND incoming request → use incoming picks
           for (const u in users) {
-            if (existingUsers[u] !== undefined) {
-              mergedUsers[u] = users[u];
+            const cloudVal = existingUsers[u];
+            if (cloudVal === null) {
+              // Admin-deleted (tombstone) — skip, don't resurrect
+              continue;
             }
+            // New user (undefined) or existing user (Array) — accept incoming picks
+            mergedUsers[u] = users[u];
           }
-          // Users that exist ONLY in cloud (admin hasn't deleted them) → keep cloud picks
+          // Users only in cloud (admin hasn't deleted them) — keep cloud picks
           for (const u in existingUsers) {
-            if (!mergedUsers[u]) {
+            if (existingUsers[u] !== null && !mergedUsers[u]) {
               mergedUsers[u] = existingUsers[u];
             }
           }
@@ -138,12 +144,12 @@ export default async function handler(req, res) {
         if (mustSee && Object.keys(mustSee).length > 0) {
           const mergedMustSee = {};
           for (const u in mustSee) {
-            if (existingMustSee[u] !== undefined) {
-              mergedMustSee[u] = mustSee[u];
-            }
+            const cloudVal = existingMustSee[u];
+            if (cloudVal === null) continue;
+            mergedMustSee[u] = mustSee[u];
           }
           for (const u in existingMustSee) {
-            if (!mergedMustSee[u]) {
+            if (existingMustSee[u] !== null && !mergedMustSee[u]) {
               mergedMustSee[u] = existingMustSee[u];
             }
           }
@@ -180,8 +186,9 @@ export default async function handler(req, res) {
           if (blobs.length > 0) {
             const resp = await fetch(blobs[0].url);
             const existing = await resp.json();
-            if (existing.users) delete existing.users[data.user];
-            if (existing.mustSee) delete existing.mustSee[data.user];
+            // Use null tombstone — distinguishes "never existed" from "admin-deleted"
+            if (existing.users) existing.users[data.user] = null;
+            if (existing.mustSee) existing.mustSee[data.user] = null;
             await put(key, JSON.stringify(existing), { access: 'public', allowOverwrite: true });
             return res.status(200).json({ ok: true, message: 'Removed ' + data.user + ' from ' + data.group });
           }
